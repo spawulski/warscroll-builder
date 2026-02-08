@@ -57,11 +57,11 @@ export default function PrintSheet({ warscrolls, onClose }: PrintSheetProps) {
         </div>
       </div>
       <div className="flex-1 overflow-auto p-4">
-        <div ref={printRef} className="mx-auto max-w-[210mm]">
+        <div ref={printRef} className="mx-auto w-full max-w-[210mm]">
           {pages.map((pageWarscrolls, pageIndex) => (
             <div
               key={pageIndex}
-              className="print-sheet grid grid-cols-2 gap-4 bg-white p-4 min-h-[277mm]"
+              className="print-sheet grid grid-cols-2 gap-3 bg-white p-3 min-h-[277mm]"
               style={{ breakInside: "avoid" }}
             >
               {[0, 1, 2, 3].map((slot) => {
@@ -69,10 +69,10 @@ export default function PrintSheet({ warscrolls, onClose }: PrintSheetProps) {
                 return (
                   <div
                     key={slot}
-                    className="flex items-stretch justify-center"
+                    className="flex min-w-0 items-stretch"
                   >
                     {w ? (
-                      <div className="w-full max-w-[95mm]">
+                      <div className="w-full min-w-0">
                         <WarscrollCard
                           warscroll={w}
                           compact
@@ -80,7 +80,7 @@ export default function PrintSheet({ warscrolls, onClose }: PrintSheetProps) {
                         />
                       </div>
                     ) : (
-                      <div className="w-full max-w-[95mm] rounded-lg border-2 border-dashed border-slate-300 bg-slate-50/50" />
+                      <div className="w-full min-w-0 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50/50" />
                     )}
                   </div>
                 );

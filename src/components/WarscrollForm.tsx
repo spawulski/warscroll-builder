@@ -546,6 +546,9 @@ export default function WarscrollForm({ warscroll, onChange }: WarscrollFormProp
                       className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                       placeholder="Full ability description..."
                     />
+                    <span className="mt-0.5 block text-[11px] text-slate-500">
+                      Use <code className="rounded bg-slate-100 px-0.5">**bold**</code> and <code className="rounded bg-slate-100 px-0.5">*italic*</code>; line breaks are kept on the card.
+                    </span>
                   </label>
                   <label className="block sm:col-span-2">
                     <span className="text-xs text-slate-600">Ability keywords</span>
