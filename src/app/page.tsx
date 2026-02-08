@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Printer, Trash2, Edit2 } from "lucide-react";
+import { Plus, Printer, Trash2, Edit2, Download, Loader2 } from "lucide-react";
 import type { Warscroll, BattleTrait, ArmyCollection } from "@/types/warscroll";
 import {
   createEmptyWarscroll,
@@ -25,6 +25,8 @@ import BattleTraitCard from "@/components/BattleTraitCard";
 import BattleTraitForm from "@/components/BattleTraitForm";
 import ArmyCollectionForm from "@/components/ArmyCollectionForm";
 import PrintSheet from "@/components/PrintSheet";
+import { listCatalogues, fetchCatalogueXml, type CatalogueItem } from "@/lib/github-catalogues";
+import { parseCatXml } from "@/lib/battlescribe";
 
 type View = "list" | "editor" | "print";
 type Section = "warscrolls" | "traits" | "collections";
@@ -42,6 +44,12 @@ export default function Home() {
   const [printWarscrolls, setPrintWarscrolls] = useState<Warscroll[]>([]);
   const [printBattleTraits, setPrintBattleTraits] = useState<BattleTrait[]>([]);
   const [cardLayout, setCardLayout] = useState<"portrait" | "landscape">("portrait");
+  const [catalogues, setCatalogues] = useState<CatalogueItem[]>([]);
+  const [selectedCataloguePath, setSelectedCataloguePath] = useState<string>("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccessCount, setImportSuccessCount] = useState<number | null>(null);
+  const [importUrl, setImportUrl] = useState("");
 
   const loadStored = useCallback(() => {
     setWarscrolls(getAllWarscrolls());
@@ -66,6 +74,38 @@ export default function Home() {
   useEffect(() => {
     loadCollections();
   }, [loadCollections]);
+
+  const loadCatalogues = useCallback(async () => {
+    const list = await listCatalogues();
+    setCatalogues(list);
+    setSelectedCataloguePath((prev) => (prev ? prev : list[0]?.path ?? ""));
+  }, []);
+
+  useEffect(() => {
+    if (section === "warscrolls" && catalogues.length === 0) loadCatalogues();
+  }, [section, catalogues.length, loadCatalogues]);
+
+  const handleImport = useCallback(async () => {
+    const pathOrUrl = importUrl.trim() || selectedCataloguePath;
+    if (!pathOrUrl) return;
+    setImportLoading(true);
+    setImportError(null);
+    setImportSuccessCount(null);
+    try {
+      const xml = await fetchCatalogueXml(pathOrUrl);
+      const { warscrolls: parsed, faction } = parseCatXml(xml);
+      for (const w of parsed) {
+        saveWarscroll({ ...w, faction: faction || w.faction });
+      }
+      loadStored();
+      setImportSuccessCount(parsed.length);
+      setImportUrl("");
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setImportLoading(false);
+    }
+  }, [selectedCataloguePath, importUrl, loadStored]);
 
   const handleSave = useCallback(
     (w: Warscroll) => {
@@ -264,7 +304,7 @@ export default function Home() {
       <main className="mx-auto max-w-6xl px-4 py-6">
         {view === "list" && section === "warscrolls" && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-end gap-3">
               <button
                 type="button"
                 onClick={handleNew}
@@ -272,6 +312,69 @@ export default function Home() {
               >
                 <Plus className="h-4 w-4" /> New Warscroll
               </button>
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <span className="text-sm font-medium text-slate-700">Import from BattleScribe</span>
+                <button
+                  type="button"
+                  onClick={() => loadCatalogues()}
+                  disabled={importLoading}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
+                  title="Refresh list from GitHub"
+                >
+                  Refresh
+                </button>
+                <select
+                  value={selectedCataloguePath}
+                  onChange={(e) => setSelectedCataloguePath(e.target.value)}
+                  className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800"
+                  disabled={importLoading}
+                >
+                  {catalogues.length === 0 && (
+                    <option value="">Loading…</option>
+                  )}
+                  {catalogues.map((c) => (
+                    <option key={c.path} value={c.path}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleImport}
+                  disabled={importLoading || (!importUrl.trim() && !selectedCataloguePath)}
+                  className="flex items-center gap-2 rounded-lg bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-600 disabled:opacity-50"
+                >
+                  {importLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  {importLoading ? "Importing…" : "Import"}
+                </button>
+                {importError && (
+                  <span className="text-sm text-red-600">{importError}</span>
+                )}
+                {importSuccessCount !== null && (
+                  <span className="text-sm text-green-700">Imported {importSuccessCount} unit{importSuccessCount !== 1 ? "s" : ""}</span>
+                )}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Or paste a raw .cat URL</label>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={importUrl}
+                  onChange={(e) => setImportUrl(e.target.value)}
+                  placeholder="https://raw.githubusercontent.com/BSData/age-of-sigmar-4th/main/..."
+                  className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 placeholder:text-slate-400"
+                  disabled={importLoading}
+                />
+                <button
+                  type="button"
+                  onClick={handleImport}
+                  disabled={importLoading || !importUrl.trim()}
+                  className="rounded-lg bg-slate-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-500 disabled:opacity-50"
+                >
+                  Fetch &amp; Import
+                </button>
+              </div>
             </div>
             {warscrolls.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-12 text-center text-slate-600">
