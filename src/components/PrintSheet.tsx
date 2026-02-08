@@ -2,11 +2,13 @@
 
 import { useRef } from "react";
 import { useReactToPrint } from "react-to-print";
-import type { Warscroll } from "@/types/warscroll";
+import type { Warscroll, BattleTrait } from "@/types/warscroll";
 import WarscrollCard from "./WarscrollCard";
+import BattleTraitCard from "./BattleTraitCard";
 
 interface PrintSheetProps {
   warscrolls: Warscroll[];
+  battleTraits?: BattleTrait[];
   onClose: () => void;
 }
 
@@ -14,7 +16,9 @@ interface PrintSheetProps {
  * Print view: 4 Warscrolls per page (2x2 grid), A4/Letter friendly.
  * Compact mode for print.
  */
-export default function PrintSheet({ warscrolls, onClose }: PrintSheetProps) {
+type PrintCard = { type: "warscroll"; data: Warscroll } | { type: "battleTrait"; data: BattleTrait };
+
+export default function PrintSheet({ warscrolls, battleTraits = [], onClose }: PrintSheetProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = useReactToPrint({
@@ -28,10 +32,13 @@ export default function PrintSheet({ warscrolls, onClose }: PrintSheetProps) {
     `,
   });
 
-  // Chunk into pages of 4 (2x2)
-  const pages: Warscroll[][] = [];
-  for (let i = 0; i < warscrolls.length; i += 4) {
-    pages.push(warscrolls.slice(i, i + 4));
+  const cards: PrintCard[] = [
+    ...warscrolls.map((w) => ({ type: "warscroll" as const, data: w })),
+    ...battleTraits.map((t) => ({ type: "battleTrait" as const, data: t })),
+  ];
+  const pages: PrintCard[][] = [];
+  for (let i = 0; i < cards.length; i += 4) {
+    pages.push(cards.slice(i, i + 4));
   }
   if (pages.length === 0) pages.push([]);
 
@@ -58,26 +65,30 @@ export default function PrintSheet({ warscrolls, onClose }: PrintSheetProps) {
       </div>
       <div className="flex-1 overflow-auto p-4">
         <div ref={printRef} className="mx-auto w-full max-w-[210mm]">
-          {pages.map((pageWarscrolls, pageIndex) => (
+          {pages.map((pageCards, pageIndex) => (
             <div
               key={pageIndex}
               className="print-sheet grid grid-cols-2 gap-3 bg-white p-3 min-h-[277mm]"
               style={{ breakInside: "avoid" }}
             >
               {[0, 1, 2, 3].map((slot) => {
-                const w = pageWarscrolls[slot];
+                const card = pageCards[slot];
                 return (
                   <div
                     key={slot}
                     className="flex min-w-0 items-stretch"
                   >
-                    {w ? (
+                    {card ? (
                       <div className="w-full min-w-0">
-                        <WarscrollCard
-                          warscroll={w}
-                          compact
-                          showExpand={false}
-                        />
+                        {card.type === "warscroll" ? (
+                          <WarscrollCard
+                            warscroll={card.data}
+                            compact
+                            showExpand={false}
+                          />
+                        ) : (
+                          <BattleTraitCard trait={card.data} compact />
+                        )}
                       </div>
                     ) : (
                       <div className="w-full min-w-0 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50/50" />

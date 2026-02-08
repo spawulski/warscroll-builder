@@ -4,9 +4,11 @@
  * Value: JSON array of Warscroll
  */
 
-import type { Warscroll, Ability, AbilityColor, AbilityPhase } from "@/types/warscroll";
+import type { Warscroll, BattleTrait, ArmyCollection, Ability, AbilityColor, AbilityPhase } from "@/types/warscroll";
 
 const STORAGE_KEY = "aos-warscrolls";
+const BATTLE_TRAITS_KEY = "aos-battle-traits";
+const ARMY_COLLECTIONS_KEY = "aos-army-collections";
 
 const PHASE_VALUES: AbilityPhase[] = [
   "Hero Phase", "Shooting Phase", "Combat Phase", "Charge Phase",
@@ -94,4 +96,80 @@ export function saveWarscroll(warscroll: Warscroll): void {
 
 export function deleteWarscroll(id: string): void {
   setStored(getStored().filter((w) => w.id !== id));
+}
+
+function getBattleTraitsStored(): BattleTrait[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(BATTLE_TRAITS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as BattleTrait[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function setBattleTraitsStored(list: BattleTrait[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(BATTLE_TRAITS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn("Failed to save battle traits", e);
+  }
+}
+
+export function getAllBattleTraits(): BattleTrait[] {
+  return getBattleTraitsStored();
+}
+
+export function saveBattleTrait(trait: BattleTrait): void {
+  const list = getBattleTraitsStored();
+  const index = list.findIndex((t) => t.id === trait.id);
+  const updated = { ...trait, updatedAt: new Date().toISOString() };
+  if (index >= 0) list[index] = updated;
+  else list.push(updated);
+  setBattleTraitsStored(list);
+}
+
+export function deleteBattleTrait(id: string): void {
+  setBattleTraitsStored(getBattleTraitsStored().filter((t) => t.id !== id));
+}
+
+function getArmyCollectionsStored(): ArmyCollection[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(ARMY_COLLECTIONS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as ArmyCollection[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function setArmyCollectionsStored(list: ArmyCollection[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(ARMY_COLLECTIONS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn("Failed to save army collections", e);
+  }
+}
+
+export function getAllArmyCollections(): ArmyCollection[] {
+  return getArmyCollectionsStored();
+}
+
+export function saveArmyCollection(collection: ArmyCollection): void {
+  const list = getArmyCollectionsStored();
+  const index = list.findIndex((c) => c.id === collection.id);
+  const updated = { ...collection, updatedAt: new Date().toISOString() };
+  if (index >= 0) list[index] = updated;
+  else list.push(updated);
+  setArmyCollectionsStored(list);
+}
+
+export function deleteArmyCollection(id: string): void {
+  setArmyCollectionsStored(getArmyCollectionsStored().filter((c) => c.id !== id));
 }

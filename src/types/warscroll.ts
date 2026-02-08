@@ -181,3 +181,45 @@ export function createEmptyWarscroll(): Warscroll {
     updatedAt: now,
   };
 }
+
+/** Battle Traits card: a named collection of abilities (no unit stats/weapons). */
+export interface BattleTrait {
+  id: string;
+  name: string;
+  abilities: Ability[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function createEmptyBattleTrait(): BattleTrait {
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    name: "",
+    abilities: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** Army Collection: a saved set of warscrolls and battle traits. */
+export interface ArmyCollection {
+  id: string;
+  name: string;
+  warscrollIds: string[];
+  battleTraitIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function createEmptyArmyCollection(): ArmyCollection {
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    name: "",
+    warscrollIds: [],
+    battleTraitIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
