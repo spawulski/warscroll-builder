@@ -191,7 +191,7 @@ export function parseCatXml(xml: string): ParseResult {
         const rend = getCharacteristic(profile, "Rend", "Rnd") || "-";
         const damage = getCharacteristic(profile, "Damage", "Dmg");
         const abils = getCharacteristic(profile, "Abilities", "Ability", "Special");
-        const isRanged = profileType.includes("ranged") || (range && parseFloat(range) > 0);
+        const isRanged = Boolean(profileType.includes("ranged") || (range && parseFloat(range) > 0));
         weapons.push({
           id: crypto.randomUUID(),
           name: profileName || "Weapon",
