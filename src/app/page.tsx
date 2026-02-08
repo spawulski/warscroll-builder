@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, ImagePlus, Printer, Trash2, Edit2 } from "lucide-react";
+import { Plus, Printer, Trash2, Edit2 } from "lucide-react";
 import type { Warscroll, BattleTrait, ArmyCollection } from "@/types/warscroll";
 import {
   createEmptyWarscroll,
@@ -24,10 +24,9 @@ import WarscrollForm from "@/components/WarscrollForm";
 import BattleTraitCard from "@/components/BattleTraitCard";
 import BattleTraitForm from "@/components/BattleTraitForm";
 import ArmyCollectionForm from "@/components/ArmyCollectionForm";
-import ScanAndReview from "@/components/ScanAndReview";
 import PrintSheet from "@/components/PrintSheet";
 
-type View = "list" | "editor" | "scan" | "print";
+type View = "list" | "editor" | "print";
 type Section = "warscrolls" | "traits" | "collections";
 
 export default function Home() {
@@ -85,14 +84,6 @@ export default function Home() {
     setCurrent(w);
     setView("editor");
   }, []);
-
-  const handleScanAccept = useCallback(
-    (w: Warscroll) => {
-      setCurrent(w);
-      setView("editor");
-    },
-    []
-  );
 
   const handleDelete = useCallback(
     (id: string) => {
@@ -262,19 +253,12 @@ export default function Home() {
               >
                 <Plus className="h-4 w-4" /> New Warscroll
               </button>
-              <button
-                type="button"
-                onClick={() => setView("scan")}
-                className="flex items-center gap-2 rounded-lg border-2 border-slate-400 bg-transparent px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700"
-              >
-                <ImagePlus className="h-4 w-4" /> Upload Image (OCR)
-              </button>
             </div>
             {warscrolls.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-12 text-center text-slate-600">
                 <p className="font-medium">No warscrolls yet.</p>
                 <p className="mt-1 text-sm">
-                  Create one from scratch or upload an image to scan.
+                  Create one from scratch.
                 </p>
               </div>
             ) : (
@@ -525,12 +509,6 @@ export default function Home() {
           </div>
         )}
 
-        {view === "scan" && (
-          <ScanAndReview
-            onAccept={handleScanAccept}
-            onCancel={() => setView("list")}
-          />
-        )}
       </main>
 
       {showPrint && (
