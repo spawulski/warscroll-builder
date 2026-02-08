@@ -106,6 +106,8 @@ interface WarscrollCardProps {
   compact?: boolean;
   showExpand?: boolean;
   maxAbilityLength?: number;
+  /** Horizontal layout: stats, then weapons+abilities flow in 2 balanced columns, then footer. */
+  landscape?: boolean;
 }
 
 export default function WarscrollCard({
@@ -113,6 +115,7 @@ export default function WarscrollCard({
   compact = false,
   showExpand = false,
   maxAbilityLength = 120,
+  landscape = false,
 }: WarscrollCardProps) {
   const stats = [
     { key: "move", label: "Move", value: warscroll.move, icon: STAT_ICONS.move },
@@ -140,23 +143,98 @@ export default function WarscrollCard({
   const truncate = (s: string, len: number) =>
     s.length <= len ? s : s.slice(0, len) + "...";
 
+  const baseClass = "warscroll-card-compact overflow-hidden rounded-lg border-2 border-slate-300 bg-white shadow-md ";
   const className =
-    "warscroll-card-compact overflow-hidden rounded-lg border-2 border-slate-300 bg-white shadow-md " +
-    (compact ? "text-sm" : "");
+    baseClass +
+    (compact ? "text-sm " : "") +
+    (landscape ? "flex flex-col max-w-none " : "");
 
   const factionLine = [warscroll.faction, warscroll.subfaction].filter(Boolean).join(" • ") || "—";
+
+  const headerEl = React.createElement(
+    "header",
+    { key: "h", className: "flex flex-wrap items-baseline gap-x-2 gap-y-0 bg-slate-800 px-3 py-1.5 text-white flex-shrink-0" },
+    React.createElement("h2", { className: "text-base font-bold leading-tight" }, warscroll.unitName || "Untitled Unit"),
+    React.createElement("span", { className: "text-[11px] text-slate-300" }, factionLine)
+  );
+
+  const statsEl = React.createElement(
+    "div",
+    { key: "s", className: "flex justify-around border-b-2 border-slate-300 bg-slate-50 px-2 py-1.5 flex-shrink-0" },
+    ...stats.map(({ key, label, value, icon, ward }) =>
+      React.createElement(StatCircle, { key, icon, value, label, ward })
+    )
+  );
+
+  const weaponsSectionEl = React.createElement(
+    "section",
+    { key: "w", className: "break-inside-avoid border-b border-slate-200 px-2 py-1" },
+    React.createElement("h3", { className: "mb-0.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-600" },
+      React.createElement(Swords, { className: "h-3 w-3" }),
+      " Weapons"
+    ),
+    React.createElement("div", { className: "space-y-0" },
+      ...warscroll.weapons.map((w) => React.createElement(WeaponRow, { key: w.id, w }))
+    )
+  );
+
+  const abilityBlockElements =
+    warscroll.abilities.length === 0
+      ? [React.createElement("p", { key: "no-a", className: "py-0.5 text-[10px] text-slate-500" }, "No abilities.")]
+      : warscroll.abilities.map((a) =>
+          React.createElement("div", { key: a.id, className: "break-inside-avoid" },
+            React.createElement(AbilityBlock, {
+              a: showExpand && maxAbilityLength > 0 && a.text.length > maxAbilityLength
+                ? { ...a, text: truncate(a.text, maxAbilityLength) }
+                : a,
+            })
+          )
+        );
+
+  const abilitiesSectionEl = React.createElement(
+    "section",
+    { key: "a", className: "px-2 py-1" },
+    React.createElement("h3", { className: "mb-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 break-inside-avoid" }, "Abilities"),
+    React.createElement("div", { className: "space-y-0" }, ...abilityBlockElements)
+  );
+
+  const footerEl = React.createElement(
+    "footer",
+    { key: "f", className: "flex flex-wrap gap-1 border-t border-slate-200 bg-slate-50 px-3 py-1 text-[10px] flex-shrink-0" },
+    warscroll.keywords.length === 0
+      ? React.createElement("span", { className: "text-slate-500" }, "No keywords")
+      : warscroll.keywords.map((k, i) =>
+          React.createElement("span", {
+            key: i,
+            className: "rounded-full bg-slate-200 px-1.5 py-0.5 font-medium text-slate-700",
+          }, k)
+        )
+  );
+
+  if (landscape) {
+    return React.createElement(
+      "div",
+      { role: "article", className },
+      headerEl,
+      statsEl,
+      React.createElement(
+        "div",
+        {
+          className: "flex-1 min-h-0 columns-2 gap-x-3 px-2 py-1",
+          style: { columnFill: "balance" },
+        },
+        weaponsSectionEl,
+        abilitiesSectionEl
+      ),
+      footerEl
+    );
+  }
+
   return React.createElement(
     "div",
     { role: "article", className },
-    React.createElement(
-      "header",
-      { className: "flex flex-wrap items-baseline gap-x-2 gap-y-0 bg-slate-800 px-3 py-1.5 text-white" },
-      React.createElement("h2", { className: "text-base font-bold leading-tight" }, warscroll.unitName || "Untitled Unit"),
-      React.createElement("span", { className: "text-[11px] text-slate-300" }, factionLine)
-    ),
-    React.createElement(
-      "div",
-      { className: "flex justify-around border-b-2 border-slate-300 bg-slate-50 px-2 py-2" },
+    headerEl,
+    React.createElement("div", { key: "s", className: "flex justify-around border-b-2 border-slate-300 bg-slate-50 px-2 py-2" },
       ...stats.map(({ key, label, value, icon, ward }) =>
         React.createElement(StatCircle, { key, icon, value, label, ward })
       )

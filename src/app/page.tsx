@@ -41,6 +41,7 @@ export default function Home() {
   const [showPrint, setShowPrint] = useState(false);
   const [printWarscrolls, setPrintWarscrolls] = useState<Warscroll[]>([]);
   const [printBattleTraits, setPrintBattleTraits] = useState<BattleTrait[]>([]);
+  const [cardLayout, setCardLayout] = useState<"portrait" | "landscape">("portrait");
 
   const loadStored = useCallback(() => {
     setWarscrolls(getAllWarscrolls());
@@ -199,7 +200,7 @@ export default function Home() {
           <h1 className="text-xl font-bold tracking-tight">
             Warscroll Architect
           </h1>
-          <nav className="flex items-center gap-2">
+          <nav className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => {
@@ -230,6 +231,24 @@ export default function Home() {
             >
               Army Collections
             </button>
+            <div className="ml-2 flex rounded border border-slate-500 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setCardLayout("portrait")}
+                className={`px-2.5 py-1 text-xs font-medium ${cardLayout === "portrait" ? "bg-slate-600 text-white" : "bg-slate-700/50 text-slate-300 hover:bg-slate-600"}`}
+                title="Card layout"
+              >
+                Portrait
+              </button>
+              <button
+                type="button"
+                onClick={() => setCardLayout("landscape")}
+                className={`px-2.5 py-1 text-xs font-medium ${cardLayout === "landscape" ? "bg-slate-600 text-white" : "bg-slate-700/50 text-slate-300 hover:bg-slate-600"}`}
+                title="Card layout"
+              >
+                Landscape
+              </button>
+            </div>
             <button
               type="button"
               onClick={openPrintAll}
@@ -262,14 +281,19 @@ export default function Home() {
                 </p>
               </div>
             ) : (
-              <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <ul className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
                 {warscrolls.map((w) => (
                   <li
                     key={w.id}
                     className="group relative rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
                   >
                     <div className="p-2">
-                      <WarscrollCard warscroll={w} showExpand maxAbilityLength={80} />
+                      <WarscrollCard
+                        warscroll={w}
+                        showExpand
+                        maxAbilityLength={80}
+                        landscape={cardLayout === "landscape"}
+                      />
                     </div>
                     <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
                       <button
@@ -377,14 +401,14 @@ export default function Home() {
                 </p>
               </div>
             ) : (
-              <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <ul className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
                 {battleTraits.map((t) => (
                   <li
                     key={t.id}
                     className="group relative rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
                   >
                     <div className="p-2">
-                      <BattleTraitCard trait={t} />
+                      <BattleTraitCard trait={t} landscape={cardLayout === "landscape"} />
                     </div>
                     <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
                       <button
@@ -418,8 +442,11 @@ export default function Home() {
                 <h2 className="mb-3 text-lg font-bold text-slate-800">
                   Preview
                 </h2>
-                <div className="max-w-sm">
-                  <WarscrollCard warscroll={current} />
+                <div className={cardLayout === "landscape" ? "max-w-2xl w-full" : "max-w-sm"}>
+                  <WarscrollCard
+                    warscroll={current}
+                    landscape={cardLayout === "landscape"}
+                  />
                 </div>
               </div>
             </div>
@@ -481,8 +508,11 @@ export default function Home() {
                 <h2 className="mb-3 text-lg font-bold text-slate-800">
                   Preview
                 </h2>
-                <div className="max-w-sm">
-                  <BattleTraitCard trait={currentTrait} />
+                <div className={cardLayout === "landscape" ? "max-w-2xl w-full" : "max-w-sm"}>
+                  <BattleTraitCard
+                    trait={currentTrait}
+                    landscape={cardLayout === "landscape"}
+                  />
                 </div>
               </div>
             </div>

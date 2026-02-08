@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import type { Warscroll, BattleTrait } from "@/types/warscroll";
 import WarscrollCard from "./WarscrollCard";
@@ -13,18 +13,26 @@ interface PrintSheetProps {
 }
 
 /**
- * Print view: 4 Warscrolls per page (2x2 grid), A4/Letter friendly.
- * Compact mode for print.
+ * Print view: 4 cards per page (2x2 grid). Portrait or landscape page; cards use matching layout.
  */
 type PrintCard = { type: "warscroll"; data: Warscroll } | { type: "battleTrait"; data: BattleTrait };
 
 export default function PrintSheet({ warscrolls, battleTraits = [], onClose }: PrintSheetProps) {
   const printRef = useRef<HTMLDivElement>(null);
+  const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
     documentTitle: "AoS Warscrolls",
-    pageStyle: `
+    pageStyle:
+      orientation === "landscape"
+        ? `
+      @page { size: A4 landscape; margin: 10mm; }
+      @media print {
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      }
+    `
+        : `
       @page { size: A4; margin: 10mm; }
       @media print {
         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -44,9 +52,26 @@ export default function PrintSheet({ warscrolls, battleTraits = [], onClose }: P
 
   return (
     <div className="no-print fixed inset-0 z-50 flex flex-col bg-slate-200">
-      <div className="flex items-center justify-between border-b border-slate-300 bg-slate-700 px-4 py-3 text-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-slate-700 px-4 py-3 text-white">
         <h2 className="text-lg font-bold">Print Sheet</h2>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-200">Page:</span>
+          <div className="flex rounded border border-slate-500 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOrientation("portrait")}
+              className={`px-3 py-1.5 text-sm font-medium ${orientation === "portrait" ? "bg-slate-600 text-white" : "bg-slate-700/50 text-slate-300 hover:bg-slate-600"}`}
+            >
+              Portrait
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrientation("landscape")}
+              className={`px-3 py-1.5 text-sm font-medium ${orientation === "landscape" ? "bg-slate-600 text-white" : "bg-slate-700/50 text-slate-300 hover:bg-slate-600"}`}
+            >
+              Landscape
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => handlePrint()}
@@ -64,11 +89,14 @@ export default function PrintSheet({ warscrolls, battleTraits = [], onClose }: P
         </div>
       </div>
       <div className="flex-1 overflow-auto p-4">
-        <div ref={printRef} className="mx-auto w-full max-w-[210mm]">
+        <div
+          ref={printRef}
+          className={`mx-auto w-full ${orientation === "landscape" ? "max-w-[297mm]" : "max-w-[210mm]"}`}
+        >
           {pages.map((pageCards, pageIndex) => (
             <div
               key={pageIndex}
-              className="print-sheet grid grid-cols-2 gap-3 bg-white p-3 min-h-[277mm]"
+              className={`print-sheet grid grid-cols-2 gap-3 bg-white p-3 ${orientation === "landscape" ? "min-h-[210mm]" : "min-h-[277mm]"}`}
               style={{ breakInside: "avoid" }}
             >
               {[0, 1, 2, 3].map((slot) => {
@@ -85,9 +113,14 @@ export default function PrintSheet({ warscrolls, battleTraits = [], onClose }: P
                             warscroll={card.data}
                             compact
                             showExpand={false}
+                            landscape={orientation === "landscape"}
                           />
                         ) : (
-                          <BattleTraitCard trait={card.data} compact />
+                          <BattleTraitCard
+                            trait={card.data}
+                            compact
+                            landscape={orientation === "landscape"}
+                          />
                         )}
                       </div>
                     ) : (
