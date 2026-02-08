@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: system-ui, -apple-system, sans-serif;
+  --card-bg: #f8fafc;
+  --card-border: #e2e8f0;
+  --header-bg: #1e293b;
+  --header-text: #f1f5f9;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+}
+
+/* Print styles */
+@media print {
+  body {
+    @apply bg-white;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-sheet {
+    page-break-after: always;
+  }
+  .print-sheet:last-child {
+    page-break-after: auto;
+  }
+}
+
+/* Compact card text for print */
+@media print {
+  .warscroll-card-compact .ability-text {
+    font-size: 0.7rem;
+    line-height: 1.2;
+  }
+  .warscroll-card-compact .weapon-row {
+    font-size: 0.65rem;
+  }
+}
