@@ -36,8 +36,8 @@ export const ABILITY_COLOR_CLASSES: Record<AbilityColor, string> = {
   black: "bg-black",
 };
 
-/** Timing: Passive, Your, Any, or Enemy (dropdown "Timing"). Optional. */
-export type AbilityTimingQualifier = "Passive" | "Your" | "Any" | "Enemy";
+/** Timing: Passive, Your, Any, Enemy, or Reaction (dropdown "Timing"). Optional. Reaction uses custom text for type/phase. */
+export type AbilityTimingQualifier = "Passive" | "Your" | "Any" | "Enemy" | "Reaction";
 
 /** Ability type: once-per limits (dropdown "Ability Type"). Optional. Ability must have at least one of timing or abilityType. */
 export type AbilityType =
@@ -72,6 +72,9 @@ export interface Ability {
   timing?: AbilityTimingQualifier;
   /** Ability type (e.g. Once Per Turn (Army)). Displayed first on card. */
   abilityType?: AbilityType;
+  /** When timing is Reaction: free-text replacement for ability type and phase on the card. */
+  reactionAbilityType?: string;
+  reactionPhase?: string;
   text: string;
   /** Battle damage ability (e.g. affects weapon profiles); shown with skull on card. */
   battleDamage?: boolean;

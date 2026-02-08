@@ -21,6 +21,7 @@ const TIMING_OPTIONS: (AbilityTimingQualifier | "")[] = [
   "Your",
   "Any",
   "Enemy",
+  "Reaction",
 ];
 
 const ABILITY_TYPE_OPTIONS: (AbilityType | "")[] = [
@@ -227,43 +228,74 @@ export default function AbilityFormSection({ abilities, onChange }: AbilityFormS
                     ))}
                   </select>
                 </label>
-                <label className="block">
-                  <span className="text-xs text-slate-600">Ability Type</span>
-                  <select
-                    value={a.abilityType ?? ""}
-                    onChange={(e) =>
-                      updateAbility(a.id, {
-                        abilityType: (e.target.value || undefined) as AbilityType | undefined,
-                      })
-                    }
-                    className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                  >
-                    {ABILITY_TYPE_OPTIONS.map((t) => (
-                      <option key={t || "none"} value={t}>
-                        {t || "—"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-xs text-slate-600">Phase</span>
-                  <select
-                    value={a.phase ?? ""}
-                    onChange={(e) =>
-                      updateAbility(a.id, {
-                        phase: (e.target.value || undefined) as AbilityPhase | undefined,
-                      })
-                    }
-                    className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                  >
-                    <option value="">—</option>
-                    {ABILITY_PHASE_OPTIONS.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {a.timing === "Reaction" ? (
+                  <>
+                    <label className="block">
+                      <span className="text-xs text-slate-600">Ability type (custom)</span>
+                      <input
+                        type="text"
+                        value={a.reactionAbilityType ?? ""}
+                        onChange={(e) =>
+                          updateAbility(a.id, { reactionAbilityType: e.target.value })
+                        }
+                        className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        placeholder="e.g. When a unit ends a move within 3&quot;"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-slate-600">Phase (custom)</span>
+                      <input
+                        type="text"
+                        value={a.reactionPhase ?? ""}
+                        onChange={(e) =>
+                          updateAbility(a.id, { reactionPhase: e.target.value })
+                        }
+                        className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        placeholder="e.g. Movement Phase"
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label className="block">
+                      <span className="text-xs text-slate-600">Ability Type</span>
+                      <select
+                        value={a.abilityType ?? ""}
+                        onChange={(e) =>
+                          updateAbility(a.id, {
+                            abilityType: (e.target.value || undefined) as AbilityType | undefined,
+                          })
+                        }
+                        className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      >
+                        {ABILITY_TYPE_OPTIONS.map((t) => (
+                          <option key={t || "none"} value={t}>
+                            {t || "—"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-slate-600">Phase</span>
+                      <select
+                        value={a.phase ?? ""}
+                        onChange={(e) =>
+                          updateAbility(a.id, {
+                            phase: (e.target.value || undefined) as AbilityPhase | undefined,
+                          })
+                        }
+                        className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      >
+                        <option value="">—</option>
+                        {ABILITY_PHASE_OPTIONS.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                )}
                 <label className="block sm:col-span-2">
                   <span className="text-xs text-slate-600">Text</span>
                   <textarea

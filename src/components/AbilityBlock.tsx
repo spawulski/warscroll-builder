@@ -68,12 +68,18 @@ interface AbilityBlockProps {
 export default function AbilityBlock({ a }: AbilityBlockProps) {
   const bgClass = ABILITY_BG_CLASSES[a.color] ?? "bg-slate-500";
   const parts: string[] = [];
-  if (a.abilityType) parts.push(a.abilityType);
-  const timingAndPhase =
-    a.timing && a.phase
-      ? `${a.timing} ${a.phase}`
-      : a.timing || a.phase || "";
-  if (timingAndPhase) parts.push(timingAndPhase);
+  if (a.timing === "Reaction") {
+    parts.push("Reaction");
+    if (a.reactionAbilityType?.trim()) parts.push(a.reactionAbilityType.trim());
+    if (a.reactionPhase?.trim()) parts.push(a.reactionPhase.trim());
+  } else {
+    if (a.abilityType) parts.push(a.abilityType);
+    const timingAndPhase =
+      a.timing && a.phase
+        ? `${a.timing} ${a.phase}`
+        : a.timing || a.phase || "";
+    if (timingAndPhase) parts.push(timingAndPhase);
+  }
   const label = parts.length > 0 ? parts.join(", ") : "";
   return (
     <div className="ability-text border-b border-slate-200 py-1.5 last:border-0">
