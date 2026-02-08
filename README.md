@@ -1,4 +1,4 @@
-# AoS Warscroll Architect
+# Warscroll Architect
 
 A web app for creating, managing, and printing **Warhammer Age of Sigmar (4th Edition)** Warscrolls.
 
@@ -44,11 +44,11 @@ src/
 
 ## Data schema (AoS 4e)
 
-- **Header:** Unit Name, Faction, Subfaction  
-- **Characteristics:** Move, Health, Save, Control, Ward (red circle badge)  
-- **Weapon profiles:** Name, Range, Attacks, Hit, Wound, Rend, Damage, optional abilities (e.g. Crit, Anti-Infantry)  
-- **Abilities:** Name, Timing (Hero/Shooting/Combat/Charge/Movement/End of Turn/Deployment/Start of Turn), Type (Passive, Reaction, Once Per Turn), Text  
-- **Keywords:** List of tags  
+- **Header:** Unit Name, Faction, Subfaction
+- **Characteristics:** Move, Health, Save, Control, Ward (red circle badge)
+- **Weapon profiles:** Name, Range, Attacks, Hit, Wound, Rend, Damage, optional abilities (e.g. Crit, Anti-Infantry)
+- **Abilities:** Name, Timing (Hero/Shooting/Combat/Charge/Movement/End of Turn/Deployment/Start of Turn), Type (Passive, Reaction, Once Per Turn), Text
+- **Keywords:** List of tags
 
 Ability timing uses the standard phase colours (e.g. yellow Hero Phase, red Combat Phase).
 

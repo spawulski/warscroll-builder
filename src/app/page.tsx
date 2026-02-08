@@ -72,7 +72,7 @@ export default function Home() {
       <header className="sticky top-0 z-40 border-b border-slate-300 bg-slate-800 text-white shadow">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <h1 className="text-xl font-bold tracking-tight">
-            AoS Warscroll Architect
+            Warscroll Architect
           </h1>
           <nav className="flex items-center gap-2">
             <button
