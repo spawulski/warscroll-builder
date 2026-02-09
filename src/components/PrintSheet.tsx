@@ -13,7 +13,7 @@ interface PrintSheetProps {
 }
 
 /**
- * Print view: 4 cards per page (2x2 grid). Portrait or landscape page; cards use matching layout.
+ * Print view: 2 cards per page (1 row, 2 columns) so each card gets full page height and is not truncated.
  */
 type PrintCard = { type: "warscroll"; data: Warscroll } | { type: "battleTrait"; data: BattleTrait };
 
@@ -45,8 +45,8 @@ export default function PrintSheet({ warscrolls, battleTraits = [], onClose }: P
     ...battleTraits.map((t) => ({ type: "battleTrait" as const, data: t })),
   ];
   const pages: PrintCard[][] = [];
-  for (let i = 0; i < cards.length; i += 4) {
-    pages.push(cards.slice(i, i + 4));
+  for (let i = 0; i < cards.length; i += 2) {
+    pages.push(cards.slice(i, i + 2));
   }
   if (pages.length === 0) pages.push([]);
 
@@ -96,15 +96,14 @@ export default function PrintSheet({ warscrolls, battleTraits = [], onClose }: P
           {pages.map((pageCards, pageIndex) => (
             <div
               key={pageIndex}
-              className={`print-sheet grid grid-cols-2 gap-3 bg-white p-3 ${orientation === "landscape" ? "min-h-[210mm]" : "min-h-[277mm]"}`}
-              style={{ breakInside: "avoid" }}
+              className={`print-sheet grid grid-cols-2 gap-3 bg-white p-3 ${orientation === "landscape" ? "print-sheet-landscape" : "print-sheet-portrait"}`}
             >
-              {[0, 1, 2, 3].map((slot) => {
+              {[0, 1].map((slot) => {
                 const card = pageCards[slot];
                 return (
                   <div
                     key={slot}
-                    className="flex min-w-0 items-stretch"
+                    className="print-card-slot flex min-w-0 items-stretch overflow-hidden"
                   >
                     {card ? (
                       <div className="w-full min-w-0">

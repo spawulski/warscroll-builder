@@ -27,20 +27,30 @@ const PHASE_TO_COLOR: Record<AbilityPhase, AbilityColor> = {
 };
 
 function migrateAbility(a: Record<string, unknown>): Record<string, unknown> {
-  let out: Record<string, unknown> = a;
+  let out: Record<string, unknown> = { ...a };
+  const timing = a.timing as string | undefined;
+  const isPassive = timing === "Passive";
   if (!("phase" in a) || a.phase == null) {
-    const phase = PHASE_VALUES.includes(a.timing as AbilityPhase) ? a.timing : "Hero Phase";
+    const phase = isPassive
+      ? undefined
+      : PHASE_VALUES.includes(a.timing as AbilityPhase)
+        ? a.timing
+        : "Hero Phase";
     const abilityType = a.type === "Once Per Turn" ? "Once Per Turn" : undefined;
-    const { timing: _t, type: _y, ...rest } = a;
-    out = { ...rest, phase, abilityType };
+    const { type: _y, ...rest } = a;
+    out = { ...rest, phase, abilityType, timing: timing ?? a.timing };
   }
-  if (out.phase === "Passive") {
-    out = { ...out, phase: undefined };
+  if (out.phase === "Passive" || (out.timing as string) === "Passive") {
+    out = { ...out, phase: undefined, timing: "Passive" };
     if (!("color" in out) || out.color == null) out = { ...out, color: "green" };
   }
   if (!("color" in out) || out.color == null) {
-    const phase = PHASE_VALUES.includes(out.phase as AbilityPhase) ? (out.phase as AbilityPhase) : "Hero Phase";
-    out = { ...out, color: PHASE_TO_COLOR[phase] };
+    const phase = (out.timing as string) === "Passive"
+      ? undefined
+      : PHASE_VALUES.includes(out.phase as AbilityPhase)
+        ? (out.phase as AbilityPhase)
+        : "Hero Phase";
+    out = { ...out, color: phase ? PHASE_TO_COLOR[phase] : "green" };
   }
   if (out.color === "dark yellow") out = { ...out, color: "yellow" };
   return out;

@@ -313,7 +313,7 @@ export default function Home() {
                 <Plus className="h-4 w-4" /> New Warscroll
               </button>
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <span className="text-sm font-medium text-slate-700">Import from BattleScribe</span>
+                <span className="text-sm font-medium text-slate-700">Import from BSData</span>
                 <button
                   type="button"
                   onClick={() => loadCatalogues()}

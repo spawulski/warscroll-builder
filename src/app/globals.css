@@ -14,7 +14,7 @@ body {
   @apply bg-slate-100 text-slate-900 antialiased;
 }
 
-/* Print styles */
+/* Print styles: one page per sheet, cards not cut off */
 @media print {
   body {
     @apply bg-white;
@@ -22,11 +22,37 @@ body {
   .no-print {
     display: none !important;
   }
+  /* Each sheet = one physical page; force break after */
   .print-sheet {
     page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    /* Match A4 content area (with ~10mm margin) so sheet doesn’t grow into a long strip */
+    overflow: hidden;
+    box-sizing: border-box;
   }
   .print-sheet:last-child {
     page-break-after: auto;
+    break-after: auto;
+  }
+  /* Prevent a card from being split across pages; min-height 0 so grid can shrink */
+  .print-sheet .print-card-slot {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    min-height: 0;
+  }
+  .print-sheet-portrait {
+    height: 277mm;
+    max-height: 277mm;
+  }
+  .print-sheet-landscape {
+    height: 190mm;
+    max-height: 190mm;
+  }
+  /* 1 row, 2 columns: each card gets full page height (no truncation) */
+  .print-sheet {
+    grid-template-rows: 1fr;
   }
 }
 

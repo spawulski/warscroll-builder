@@ -10,8 +10,12 @@ const RAW_BASE = "https://raw.githubusercontent.com/BSData/age-of-sigmar-4th/mai
 export interface CatalogueItem {
   name: string;
   path: string;
-  /** Display label, e.g. "Blades of Khorne - Library" */
+  /** Display label, e.g. "Blades of Khorne" (no " - Library" suffix). */
   label: string;
+}
+
+function libraryCatalogueLabel(filename: string): string {
+  return filename.replace(/\.cat$/i, "").replace(/\s*-\s*Library\s*$/i, "").trim() || filename;
 }
 
 /** Static fallback list of Library catalogues (from repo structure). */
@@ -44,7 +48,7 @@ const FALLBACK_LIBRARY: CatalogueItem[] = [
 ].map((path) => ({
   name: path,
   path,
-  label: path.replace(/\.cat$/i, ""),
+  label: libraryCatalogueLabel(path),
 }));
 
 /**
@@ -59,7 +63,7 @@ export async function listCatalogues(): Promise<CatalogueItem[]> {
     });
     if (!res.ok) return FALLBACK_LIBRARY;
     const data = (await res.json()) as Array<{ name: string; path?: string }>;
-    const catFiles = data.filter((f) => f.name.endsWith(".cat"));
+    const catFiles = data.filter((f) => / - Library\.cat$/i.test(f.name));
     const libraryFirst = catFiles.sort((a, b) => {
       const aLib = a.name.includes("Library") ? 0 : 1;
       const bLib = b.name.includes("Library") ? 0 : 1;
@@ -69,7 +73,7 @@ export async function listCatalogues(): Promise<CatalogueItem[]> {
     return libraryFirst.map((f) => ({
       name: f.name,
       path: f.path ?? f.name,
-      label: f.name.replace(/\.cat$/i, ""),
+      label: libraryCatalogueLabel(f.name),
     }));
   } catch {
     return FALLBACK_LIBRARY;

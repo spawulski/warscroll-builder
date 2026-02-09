@@ -7,6 +7,9 @@ import type { Warscroll, Ability, WeaponProfile, AbilityColor, AbilityPhase, Abi
 
 const RAW_BASE = "https://raw.githubusercontent.com/BSData/age-of-sigmar-4th/main";
 
+/** Set to true to log ability parsing (rawTypeName, timingChar, isPassive, phase) to console for debugging. */
+const BATTLESCRIBE_ABILITY_DEBUG = false;
+
 function text(el: Element | null): string {
   return el?.textContent?.trim() ?? "";
 }
@@ -39,17 +42,35 @@ function childrenByLocalName(parent: Element, localName: string): Element[] {
   );
 }
 
+/** Get element attribute; works with namespaced XML (tries no-namespace for attributes). */
+function getAttr(el: Element, name: string): string {
+  return el.getAttribute(name) ?? el.getAttributeNS(null, name) ?? "";
+}
+
 function getCharacteristic(profile: Element, ...names: string[]): string {
   for (const name of names) {
-    const c = qAll(profile, "characteristic").find((n) => n.getAttribute("name") === name);
+    const c = qAll(profile, "characteristic").find((n) => getAttr(n, "name") === name);
+    if (c) return text(c);
+  }
+  return "";
+}
+
+/** Get characteristic value only from this profile's direct <characteristics> children (avoids reading sibling profiles' data in DOM). */
+function getCharacteristicDirect(profile: Element, ...names: string[]): string {
+  const characteristicsEl = q(profile, "characteristics");
+  if (!characteristicsEl) return "";
+  const list = qAll(characteristicsEl, "characteristic");
+  for (const name of names) {
+    const c = list.find((n) => getAttr(n, "name") === name);
     if (c) return text(c);
   }
   return "";
 }
 
 function getAttribute(profile: Element, name: string): string {
-  const a = qAll(profile, "attribute").find((n) => n.getAttribute("name") === name);
-  return a?.getAttribute("value") ?? a?.textContent?.trim() ?? "";
+  const a = qAll(profile, "attribute").find((n) => getAttr(n, "name") === name);
+  if (!a) return "";
+  return getAttr(a, "value") || text(a) || "";
 }
 
 function normalizePhase(s: string): AbilityPhase | undefined {
@@ -66,9 +87,9 @@ function normalizePhase(s: string): AbilityPhase | undefined {
   if (/\bcombat\b/i.test(s)) return "Combat Phase";
   if (/\bcharge\b/i.test(s)) return "Charge Phase";
   if (/\bmov(e|ement)\b/i.test(s)) return "Movement Phase";
-  if (/\bend\s+of\s+turn\b/i.test(s)) return "End of Turn";
+  if (/\bend\s+of\s+(?:any\s+)?turn\b/i.test(s)) return "End of Turn";
   if (/\bdeploy/i.test(s)) return "Deployment";
-  if (/\bstart\s+of\s+turn\b/i.test(s)) return "Start of Turn";
+  if (/\bstart\s+of\s+(?:any\s+)?turn\b/i.test(s)) return "Start of Turn";
   return undefined;
 }
 
@@ -80,6 +101,18 @@ function normalizeColor(s: string): AbilityColor {
   };
   return map[s.toLowerCase().trim()] ?? "grey";
 }
+
+/** Phase → ability bar colour for activated abilities (infer from Timing characteristic). */
+const PHASE_TO_COLOR: Record<AbilityPhase, AbilityColor> = {
+  "Hero Phase": "yellow",
+  "Shooting Phase": "blue",
+  "Combat Phase": "red",
+  "Charge Phase": "orange",
+  "Movement Phase": "grey",
+  "End of Turn": "purple",
+  Deployment: "black",
+  "Start of Turn": "black",
+};
 
 function parseAbilityType(s: string): AbilityType | undefined {
   if (/once per turn \(army\)/i.test(s)) return "Once Per Turn (Army)";
@@ -107,13 +140,24 @@ function decodeEntities(s: string): string {
     .replace(/&gt;/g, ">");
 }
 
-/** Clean AoS flavour text for ability blocks: ^^X^^ -> **X** (markdown bold), decode entities. */
+/** Clean AoS flavour text: bold **^^words^^** and ^^words^^ (strip carets and extra stars, output **words** for bold); decode entities. */
 function cleanEffect(raw: string): string {
   return decodeEntities(raw)
+    .replace(/\*\*\^\^([^^]+)\^\^\*\*/g, "**$1**")
     .replace(/\^\^([^^]+)\^\^/g, "**$1**");
 }
 
-/** Strip BattleScribe markdown from weapon ability text for plain display: remove ^^ and ** wrappers, decode entities. */
+/** Build ability body text from Declare and Effect characteristics; formats as **Declare**: ... and **Effect**: ... when both present. */
+function buildAbilityText(declare: string, effect: string, profileName: string): string {
+  const d = declare?.trim();
+  const e = effect?.trim();
+  if (d && e) return `**Declare**: ${cleanEffect(d)}\n**Effect**: ${cleanEffect(e)}`;
+  if (e) return cleanEffect(e);
+  if (d) return cleanEffect(d);
+  return cleanEffect(profileName || "");
+}
+
+/** Strip BattleScribe markdown (^^ and ** wrappers) for plain display; used for weapon abilities and timing/reaction label text. Decodes entities. */
 function stripWeaponAbility(raw: string): string {
   return decodeEntities(raw)
     .replace(/\^\^([^^]+)\^\^/g, "$1")
@@ -130,7 +174,7 @@ export function parseCatXml(xml: string): ParseResult {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, "text/xml");
   const catalogue = q(doc, "catalogue");
-  const faction = catalogue?.getAttribute("name")?.replace(/\s*-\s*Library\s*$/i, "").trim() ?? "Imported";
+  const faction = (catalogue ? getAttr(catalogue, "name") : "")?.replace(/\s*-\s*Library\s*$/i, "").trim() || "Imported";
 
   const warscrolls: Warscroll[] = [];
   const now = new Date().toISOString();
@@ -155,10 +199,10 @@ export function parseCatXml(xml: string): ParseResult {
   }
 
   for (const entry of Array.from(entries)) {
-    const type = (entry.getAttribute("type") ?? "").toLowerCase();
+    const type = (getAttr(entry, "type") || "").toLowerCase();
     if (type !== "unit" && type !== "model") continue;
 
-    const unitName = entry.getAttribute("name") ?? text(q(entry, "name")) ?? "Unknown";
+    const unitName = getAttr(entry, "name") || text(q(entry, "name")) || "Unknown";
     const id = crypto.randomUUID();
 
     const profileEls = collectProfiles(entry);
@@ -171,8 +215,8 @@ export function parseCatXml(xml: string): ParseResult {
     const abilities: Ability[] = [];
 
     for (const profile of profileEls) {
-      const profileType = (profile.getAttribute("typeName") ?? profile.getAttribute("type") ?? "").toLowerCase();
-      const profileName = profile.getAttribute("name") ?? "";
+      const profileType = (getAttr(profile, "typeName") || getAttr(profile, "type") || "").toLowerCase();
+      const profileName = getAttr(profile, "name") || "";
 
       if (profileType.includes("unit") && !profileType.includes("weapon") && !profileType.includes("ability")) {
         move = getCharacteristic(profile, "Move", "Movement") || move;
@@ -207,26 +251,70 @@ export function parseCatXml(xml: string): ParseResult {
       }
 
       if (profileType.includes("ability") || profileType.includes("effect")) {
+        const declare = getCharacteristic(profile, "Declare");
         const effect = getCharacteristic(profile, "Effect", "Description", "Rules");
-        if (!effect && !profileName) continue;
-        const color = normalizeColor(getAttribute(profile, "Color") || getCharacteristic(profile, "Color", "Colour"));
+        if (!declare && !effect && !profileName) continue;
         const typeStr = getAttribute(profile, "Type") || getCharacteristic(profile, "Type", "Ability Type");
-        const timingStr = getAttribute(profile, "Timing") || getAttribute(profile, "Phase") || getCharacteristic(profile, "Timing", "Phase", "When");
+        // Use direct characteristics only for Timing so we never read a sibling profile's Timing (browser DOM safety)
+        const timingChar = getCharacteristicDirect(profile, "Timing", "Phase", "When");
+        const timingStr = getAttribute(profile, "Timing") || getAttribute(profile, "Phase") || timingChar;
         const combined = `${timingStr} ${typeStr}`.trim();
 
-        let phase: AbilityPhase | undefined = normalizePhase(timingStr) ?? normalizePhase(combined);
-        let timing: AbilityTimingQualifier | undefined = parseTiming(combined) ?? parseTiming(timingStr);
-        const abilityType = parseAbilityType(combined) ?? parseAbilityType(typeStr);
+        // Passive: no Timing/Phase/When in this profile's characteristics is the primary signal; typeName="Ability (Passive)" as backup
+        const rawTypeName = (getAttr(profile, "typeName") || getAttr(profile, "type") || "").trim();
+        const isExplicitlyPassive = /ability\s*\(\s*passive\s*\)/i.test(rawTypeName);
+        const hasTimingChar = Boolean(timingChar?.trim());
+        const isPassive = Boolean(
+          (!hasTimingChar && (declare || effect || profileName)) ||
+            isExplicitlyPassive ||
+            profileType.includes("passive") ||
+            /passive/i.test(typeStr) ||
+            /passive/i.test(combined)
+        );
 
-        const isReaction = /reaction\s*:/i.test(combined) || /reaction\s*:/i.test(effect);
+        let phase: AbilityPhase | undefined;
+        let timing: AbilityTimingQualifier | undefined;
+        let abilityType: AbilityType | undefined;
+
+        if (isPassive) {
+          timing = "Passive";
+          phase = undefined;
+          abilityType = undefined;
+        } else {
+          phase = normalizePhase(timingStr) ?? normalizePhase(combined);
+          timing = parseTiming(combined) ?? parseTiming(timingStr);
+          abilityType = parseAbilityType(combined) ?? parseAbilityType(typeStr);
+        }
+
+        // Activated abilities: infer colour from Timing (phase); passive uses profile Color
+        let color = normalizeColor(getAttribute(profile, "Color") || getCharacteristic(profile, "Color", "Colour"));
+        if (!isPassive && phase) color = PHASE_TO_COLOR[phase];
+
+        if (BATTLESCRIBE_ABILITY_DEBUG && typeof console !== "undefined" && console.log) {
+          console.log("[battlescribe ability]", {
+            name: profileName || "Ability",
+            rawTypeName,
+            profileType,
+            timingChar: timingChar || "(empty)",
+            timingStr: timingStr || "(empty)",
+            hasTimingChar,
+            isExplicitlyPassive,
+            isPassive,
+            phase,
+            timing,
+          });
+        }
+
+        const isReaction = !isPassive && (/reaction\s*:/i.test(combined) || /reaction\s*:/i.test(effect));
         let reactionAbilityType: string | undefined;
         let reactionPhase: string | undefined;
         if (isReaction) {
           timing = "Reaction";
           const match = effect?.match(/Reaction:\s*([^\n.]+)/i) ?? combined.match(/Reaction:\s*(.+)/i);
-          if (match) reactionAbilityType = match[1].trim();
+          if (match) reactionAbilityType = stripWeaponAbility(match[1].trim());
         }
 
+        const abilityText = buildAbilityText(declare, effect, profileName);
         abilities.push({
           id: crypto.randomUUID(),
           name: profileName || "Ability",
@@ -236,7 +324,7 @@ export function parseCatXml(xml: string): ParseResult {
           abilityType,
           reactionAbilityType,
           reactionPhase,
-          text: cleanEffect(effect || profileName),
+          text: abilityText,
         });
       }
     }
@@ -244,7 +332,7 @@ export function parseCatXml(xml: string): ParseResult {
     const keywords: string[] = [];
     const catLinks = q(entry, "categoryLinks");
     for (const link of catLinks ? qAll(catLinks, "categoryLink") : []) {
-      const name = link.getAttribute("name") ?? text(link);
+      const name = getAttr(link, "name") || text(link);
       if (!name) continue;
       const wardMatch = /^WARD\s*\((\d+\+)\)$/i.exec(name);
       if (wardMatch) ward = wardMatch[1];

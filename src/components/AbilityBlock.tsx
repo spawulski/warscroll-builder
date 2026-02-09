@@ -72,6 +72,8 @@ export default function AbilityBlock({ a }: AbilityBlockProps) {
     parts.push("Reaction");
     if (a.reactionAbilityType?.trim()) parts.push(a.reactionAbilityType.trim());
     if (a.reactionPhase?.trim()) parts.push(a.reactionPhase.trim());
+  } else if (a.timing === "Passive") {
+    parts.push("Passive");
   } else {
     if (a.abilityType) parts.push(a.abilityType);
     const timingAndPhase =
