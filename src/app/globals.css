@@ -66,3 +66,14 @@ body {
     font-size: 0.65rem;
   }
 }
+
+/* Cheat sheet: fit many abilities on one page */
+@media print {
+  .cheat-sheet-grid {
+    gap: 0.25rem 1rem;
+  }
+  .cheat-sheet-entry {
+    padding-bottom: 0.25rem;
+    font-size: 7pt;
+  }
+}

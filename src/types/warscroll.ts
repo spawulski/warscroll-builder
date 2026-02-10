@@ -11,6 +11,7 @@ export type AbilityPhase =
   | "Movement Phase"
   | "End of Turn"
   | "Deployment"
+  | "Start of Battle Round"
   | "Start of Turn";
 
 /** Ability bar color (dropdown "Color"). Text is always white on top. */
@@ -88,11 +89,33 @@ export interface Ability {
   keywords?: string[];
 }
 
+/** Unit type for grouping warscrolls. */
+export type UnitType =
+  | "hero"
+  | "infantry"
+  | "cavalry"
+  | "beast"
+  | "monster"
+  | "war machine"
+  | "manifestation";
+
+export const UNIT_TYPE_ORDER: UnitType[] = [
+  "hero",
+  "infantry",
+  "cavalry",
+  "beast",
+  "monster",
+  "war machine",
+  "manifestation",
+];
+
 export interface Warscroll {
   id: string;
   unitName: string;
   faction: string;
   subfaction?: string;
+  /** Derived from categoryLinks for grouping (e.g. HERO, INFANTRY). */
+  unitType?: UnitType;
   move: string;
   health: string;
   save: string;
@@ -113,6 +136,7 @@ export const ABILITY_PHASE_COLORS: Record<AbilityPhase, string> = {
   "Movement Phase": "bg-aos-grey text-white",
   "End of Turn": "bg-aos-purple text-white",
   Deployment: "bg-aos-black text-white",
+  "Start of Battle Round": "bg-aos-black text-white",
   "Start of Turn": "bg-aos-black text-white",
 };
 
@@ -150,6 +174,7 @@ export const ABILITY_PHASE_OPTIONS: AbilityPhase[] = [
   "Movement Phase",
   "End of Turn",
   "Deployment",
+  "Start of Battle Round",
   "Start of Turn",
 ];
 
@@ -185,10 +210,40 @@ export function createEmptyWarscroll(): Warscroll {
   };
 }
 
-/** Battle Traits card: a named collection of abilities (no unit stats/weapons). */
+/** Battle trait section types for grouping on the traits page. */
+export type BattleTraitType =
+  | "Prayer lores"
+  | "Artefacts"
+  | "Heroic traits"
+  | "Spell lores"
+  | "Manifestation Lores"
+  | "Battle formations"
+  | "Battle traits";
+
+export const TRAIT_TYPE_ORDER: BattleTraitType[] = [
+  "Battle traits",
+  "Battle formations",
+  "Heroic traits",
+  "Artefacts",
+  "Spell lores",
+  "Prayer lores",
+  "Manifestation Lores",
+];
+
+/** Battle Traits card: same structure as unit warscroll except no weapons. */
 export interface BattleTrait {
   id: string;
   name: string;
+  /** Section type for grouping (Prayer lores, Artefacts, etc.). */
+  traitType?: BattleTraitType;
+  faction?: string;
+  subfaction?: string;
+  move: string;
+  health: string;
+  save: string;
+  control: string;
+  ward?: string;
+  keywords: string[];
   abilities: Ability[];
   createdAt: string;
   updatedAt: string;
@@ -199,6 +254,12 @@ export function createEmptyBattleTrait(): BattleTrait {
   return {
     id: crypto.randomUUID(),
     name: "",
+    traitType: "Battle traits",
+    move: "-",
+    health: "-",
+    save: "-",
+    control: "-",
+    keywords: [],
     abilities: [],
     createdAt: now,
     updatedAt: now,
@@ -209,6 +270,8 @@ export function createEmptyBattleTrait(): BattleTrait {
 export interface ArmyCollection {
   id: string;
   name: string;
+  /** Faction label (e.g. Fyreslayers); populated from loaded warscrolls/traits. */
+  faction?: string;
   warscrollIds: string[];
   battleTraitIds: string[];
   createdAt: string;

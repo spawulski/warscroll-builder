@@ -12,7 +12,7 @@ const ARMY_COLLECTIONS_KEY = "aos-army-collections";
 
 const PHASE_VALUES: AbilityPhase[] = [
   "Hero Phase", "Shooting Phase", "Combat Phase", "Charge Phase",
-  "Movement Phase", "End of Turn", "Deployment", "Start of Turn",
+  "Movement Phase", "End of Turn", "Deployment", "Start of Battle Round", "Start of Turn",
 ];
 
 const PHASE_TO_COLOR: Record<AbilityPhase, AbilityColor> = {
@@ -23,6 +23,7 @@ const PHASE_TO_COLOR: Record<AbilityPhase, AbilityColor> = {
   "Movement Phase": "grey",
   "End of Turn": "purple",
   Deployment: "black",
+  "Start of Battle Round": "black",
   "Start of Turn": "black",
 };
 
@@ -60,7 +61,11 @@ function migrateWarscroll(w: Record<string, unknown>): Warscroll {
   const abilities: Ability[] = Array.isArray(w.abilities)
     ? (w.abilities as Record<string, unknown>[]).map((a) => migrateAbility(a) as unknown as Ability)
     : [];
-  return { ...w, abilities } as Warscroll;
+  const base = { ...w, abilities } as Warscroll;
+  if (!("unitType" in base) || base.unitType == null) {
+    return { ...base, unitType: undefined };
+  }
+  return base;
 }
 
 function getStored(): Warscroll[] {
@@ -108,13 +113,25 @@ export function deleteWarscroll(id: string): void {
   setStored(getStored().filter((w) => w.id !== id));
 }
 
+function migrateBattleTrait(t: Record<string, unknown>): BattleTrait {
+  const base = t as unknown as BattleTrait;
+  return {
+    ...base,
+    move: base.move ?? "-",
+    health: base.health ?? "-",
+    save: base.save ?? "-",
+    control: base.control ?? "-",
+    keywords: Array.isArray(base.keywords) ? base.keywords : [],
+  };
+}
+
 function getBattleTraitsStored(): BattleTrait[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(BATTLE_TRAITS_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as BattleTrait[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as Record<string, unknown>[];
+    return Array.isArray(parsed) ? parsed.map(migrateBattleTrait) : [];
   } catch {
     return [];
   }
@@ -146,13 +163,19 @@ export function deleteBattleTrait(id: string): void {
   setBattleTraitsStored(getBattleTraitsStored().filter((t) => t.id !== id));
 }
 
+function migrateArmyCollection(c: Record<string, unknown>): ArmyCollection {
+  const base = c as unknown as ArmyCollection;
+  if (!("faction" in base)) return { ...base, faction: undefined };
+  return base;
+}
+
 function getArmyCollectionsStored(): ArmyCollection[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(ARMY_COLLECTIONS_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as ArmyCollection[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as Record<string, unknown>[];
+    return Array.isArray(parsed) ? parsed.map(migrateArmyCollection) : [];
   } catch {
     return [];
   }

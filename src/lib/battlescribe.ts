@@ -3,7 +3,7 @@
  * Supports BSData age-of-sigmar-4th Library.cat structure (with default namespace).
  */
 
-import type { Warscroll, Ability, WeaponProfile, AbilityColor, AbilityPhase, AbilityTimingQualifier, AbilityType } from "@/types/warscroll";
+import type { Warscroll, Ability, WeaponProfile, AbilityColor, AbilityPhase, AbilityTimingQualifier, AbilityType, BattleTrait, BattleTraitType, UnitType } from "@/types/warscroll";
 
 const RAW_BASE = "https://raw.githubusercontent.com/BSData/age-of-sigmar-4th/main";
 
@@ -76,7 +76,7 @@ function getAttribute(profile: Element, name: string): string {
 function normalizePhase(s: string): AbilityPhase | undefined {
   const phases: AbilityPhase[] = [
     "Hero Phase", "Shooting Phase", "Combat Phase", "Charge Phase",
-    "Movement Phase", "End of Turn", "Deployment", "Start of Turn",
+    "Movement Phase", "End of Turn", "Deployment", "Start of Battle Round", "Start of Turn",
   ];
   const lower = s.toLowerCase();
   for (const p of phases) {
@@ -89,6 +89,7 @@ function normalizePhase(s: string): AbilityPhase | undefined {
   if (/\bmov(e|ement)\b/i.test(s)) return "Movement Phase";
   if (/\bend\s+of\s+(?:any\s+)?turn\b/i.test(s)) return "End of Turn";
   if (/\bdeploy/i.test(s)) return "Deployment";
+  if (/\bstart\s+of\s+(?:any\s+)?(?:battle\s+)?round\b/i.test(s)) return "Start of Battle Round";
   if (/\bstart\s+of\s+(?:any\s+)?turn\b/i.test(s)) return "Start of Turn";
   return undefined;
 }
@@ -111,6 +112,7 @@ const PHASE_TO_COLOR: Record<AbilityPhase, AbilityColor> = {
   "Movement Phase": "grey",
   "End of Turn": "purple",
   Deployment: "black",
+  "Start of Battle Round": "black",
   "Start of Turn": "black",
 };
 
@@ -157,6 +159,219 @@ function buildAbilityText(declare: string, effect: string, profileName: string):
   return cleanEffect(profileName || "");
 }
 
+/** Parse a single ability profile element into an Ability, or null if not an ability/effect profile or skipped. */
+function parseAbilityFromProfile(profile: Element): Ability | null {
+  const profileType = (getAttr(profile, "typeName") || getAttr(profile, "type") || "").toLowerCase();
+  const profileName = getAttr(profile, "name") || "";
+  if (!profileType.includes("ability") && !profileType.includes("effect")) return null;
+  const declare = getCharacteristic(profile, "Declare");
+  const effect = getCharacteristic(profile, "Effect", "Description", "Rules");
+  if (!declare && !effect && !profileName) return null;
+  const typeStr = getAttribute(profile, "Type") || getCharacteristic(profile, "Type", "Ability Type");
+  const timingChar = getCharacteristicDirect(profile, "Timing", "Phase", "When");
+  const timingStr = getAttribute(profile, "Timing") || getAttribute(profile, "Phase") || timingChar;
+  const combined = `${timingStr} ${typeStr}`.trim();
+  const rawTypeName = (getAttr(profile, "typeName") || getAttr(profile, "type") || "").trim();
+  const isExplicitlyPassive = /ability\s*\(\s*passive\s*\)/i.test(rawTypeName);
+  const hasTimingChar = Boolean(timingChar?.trim());
+  const isPassive = Boolean(
+    (!hasTimingChar && (declare || effect || profileName)) ||
+      isExplicitlyPassive ||
+      profileType.includes("passive") ||
+      /passive/i.test(typeStr) ||
+      /passive/i.test(combined)
+  );
+  let phase: AbilityPhase | undefined;
+  let timing: AbilityTimingQualifier | undefined;
+  let abilityType: AbilityType | undefined;
+  if (isPassive) {
+    timing = "Passive";
+    phase = undefined;
+    abilityType = undefined;
+  } else {
+    phase = normalizePhase(timingStr) ?? normalizePhase(combined);
+    timing = parseTiming(combined) ?? parseTiming(timingStr);
+    abilityType = parseAbilityType(combined) ?? parseAbilityType(typeStr);
+  }
+  let color = normalizeColor(getAttribute(profile, "Color") || getCharacteristic(profile, "Color", "Colour"));
+  if (!isPassive && phase) color = PHASE_TO_COLOR[phase];
+  const isReaction = !isPassive && (/reaction\s*:/i.test(combined) || /reaction\s*:/i.test(effect));
+  let reactionAbilityType: string | undefined;
+  if (isReaction) {
+    timing = "Reaction";
+    const match = effect?.match(/Reaction:\s*([^\n.]+)/i) ?? combined.match(/Reaction:\s*(.+)/i);
+    if (match) reactionAbilityType = stripWeaponAbility(match[1].trim());
+  }
+  const abilityText = buildAbilityText(declare, effect, profileName);
+  const isSpell = /ability\s*\(\s*spell\s*\)/i.test(rawTypeName);
+  const isPrayer = /ability\s*\(\s*prayer\s*\)/i.test(rawTypeName);
+  const castingValue = isSpell ? (getCharacteristicDirect(profile, "Casting Value") || undefined) : undefined;
+  const chantingValue = isPrayer ? (getCharacteristicDirect(profile, "Chanting Value") || undefined) : undefined;
+  const isBattleDamage =
+    /battle\s*damaged?/i.test(profileName) || /battle\s*damage/i.test(effect || declare || "");
+  return {
+    id: crypto.randomUUID(),
+    name: profileName || "Ability",
+    color,
+    phase,
+    timing,
+    abilityType,
+    reactionAbilityType,
+    reactionPhase: undefined,
+    text: abilityText,
+    ...(isBattleDamage ? { battleDamage: true } : {}),
+    ...(isSpell ? { isSpell: true, castingValue } : {}),
+    ...(isPrayer ? { isPrayer: true, chantingValue } : {}),
+  };
+}
+
+/** Collect profiles from this entry and nested selectionEntries (e.g. model/upgrades). */
+function collectProfilesFromEntry(entry: Element): Element[] {
+  const out: Element[] = [];
+  const profilesEl = q(entry, "profiles");
+  if (profilesEl) out.push(...qAll(profilesEl, "profile"));
+  const selectionEntriesEl = q(entry, "selectionEntries");
+  if (selectionEntriesEl) {
+    for (const child of childrenByLocalName(selectionEntriesEl, "selectionEntry")) {
+      out.push(...collectProfilesFromEntry(child));
+    }
+  }
+  return out;
+}
+
+/** Map group name to canonical BattleTraitType. */
+function mapGroupNameToTraitType(groupName: string): BattleTraitType {
+  const lower = groupName.toLowerCase();
+  if (/prayer\s*lore/i.test(lower)) return "Prayer lores";
+  if (/artefact|artifact|heirloom|marks\s+of/i.test(lower)) return "Artefacts";
+  if (/heroic\s*trait/i.test(lower)) return "Heroic traits";
+  if (/manifestation\s*lore/i.test(lower)) return "Manifestation Lores";
+  if (/spell\s*lore|^lores?$/i.test(lower)) return "Spell lores";
+  if (/battle\s*formation/i.test(lower)) return "Battle formations";
+  if (/battle\s*trait/i.test(lower)) return "Battle traits";
+  return "Battle traits";
+}
+
+/** Recursively collect (entry, topLevelGroupName) from sharedSelectionEntryGroups. */
+function collectSelectionEntriesFromGroups(root: Element): Array<{ entry: Element; groupName: string }> {
+  const out: Array<{ entry: Element; groupName: string }> = [];
+  const groupsEl = q(root, "sharedSelectionEntryGroups");
+  if (!groupsEl) return out;
+  function walk(group: Element, topLevelName: string) {
+    const groupName = getAttr(group, "name") || topLevelName;
+    const currentTop = topLevelName || groupName;
+    const entriesEl = q(group, "selectionEntries");
+    if (entriesEl) {
+      for (const entry of childrenByLocalName(entriesEl, "selectionEntry")) {
+        out.push({ entry, groupName: currentTop });
+      }
+    }
+    const nested = q(group, "selectionEntryGroups");
+    if (nested) {
+      for (const child of childrenByLocalName(nested, "selectionEntryGroup")) walk(child, currentTop);
+    }
+  }
+  for (const group of childrenByLocalName(groupsEl, "selectionEntryGroup")) {
+    walk(group, getAttr(group, "name") || "");
+  }
+  return out;
+}
+
+/** Collect (entry, groupName) from sharedSelectionEntries (e.g. "Battle Traits: Fyreslayers"). */
+function collectSelectionEntriesFromShared(root: Element): Array<{ entry: Element; groupName: string }> {
+  const out: Array<{ entry: Element; groupName: string }> = [];
+  const shared = q(root, "sharedSelectionEntries") ?? q(root, "selectionEntries");
+  if (!shared) return out;
+  for (const entry of childrenByLocalName(shared as Element, "selectionEntry")) {
+    out.push({ entry, groupName: "Battle traits" });
+  }
+  return out;
+}
+
+/** Find element by id in document (recursive). */
+function findById(doc: Document | Element, id: string): Element | null {
+  const root = doc instanceof Document ? doc.documentElement : doc;
+  if (getAttr(root, "id") === id) return root;
+  for (const child of Array.from(root.children)) {
+    const found = findById(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Collect ability profiles from a selectionEntryGroup (Lores catalogue). Handles selectionEntries and entryLinks to selectionEntry. */
+function collectLoreAbilitiesFromGroup(group: Element): Ability[] {
+  const abilities: Ability[] = [];
+  const entriesEl = q(group, "selectionEntries");
+  if (entriesEl) {
+    for (const entry of childrenByLocalName(entriesEl, "selectionEntry")) {
+      const profileEls = collectProfilesFromEntry(entry);
+      for (const profile of profileEls) {
+        const ability = parseAbilityFromProfile(profile);
+        if (ability) abilities.push(ability);
+      }
+    }
+  }
+  const entryLinksEl = q(group, "entryLinks");
+  if (entryLinksEl) {
+    for (const link of childrenByLocalName(entryLinksEl, "entryLink")) {
+      const linkType = getAttr(link, "type");
+      const targetId = getAttr(link, "targetId");
+      if (!targetId) continue;
+      if (linkType === "selectionEntry") {
+        const doc = group.ownerDocument;
+        const target = findById(doc, targetId);
+        if (target) {
+          const profileEls = collectProfilesFromEntry(target);
+          for (const profile of profileEls) {
+            const ability = parseAbilityFromProfile(profile);
+            if (ability) abilities.push(ability);
+          }
+        }
+      }
+    }
+  }
+  return abilities;
+}
+
+/** Extract weapon names referenced in battle damage ability text (bold **Name**). Skips "Declare" and "Effect". */
+function extractWeaponRefsFromBattleDamageText(text: string): string[] {
+  const names: string[] = [];
+  const re = /\*\*([^*]+)\*\*/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const name = m[1].trim();
+    if (name && !/^(Declare|Effect)$/i.test(name)) names.push(name);
+  }
+  return names;
+}
+
+/** Normalize string for weapon name matching (apostrophes, case). */
+function normalizeWeaponName(s: string): string {
+  return s
+    .replace(/[''`]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/** Mark weapons and abilities with battle damage; weapon refs in ability text get suffersBattleDamage on the weapon. */
+function applyBattleDamageMarkers(
+  abilities: Ability[],
+  weapons: WeaponProfile[]
+): void {
+  for (const a of abilities) {
+    if (!a.battleDamage) continue;
+    const refs = extractWeaponRefsFromBattleDamageText(a.text);
+    if (refs.length === 0) continue;
+    const refSet = new Set(refs.map(normalizeWeaponName));
+    for (const w of weapons) {
+      const wn = normalizeWeaponName(w.name);
+      if (refSet.has(wn)) w.suffersBattleDamage = true;
+    }
+  }
+}
+
 /** Strip BattleScribe markdown (^^ and ** wrappers) for plain display; used for weapon abilities and timing/reaction label text. Decodes entities. */
 function stripWeaponAbility(raw: string): string {
   return decodeEntities(raw)
@@ -184,20 +399,6 @@ export function parseCatXml(xml: string): ParseResult {
   /** Only top-level units (direct children of shared); nested type="model" would otherwise create duplicate cards. */
   const entries = shared ? childrenByLocalName(shared as Element, "selectionEntry") : [];
 
-  /** Collect profiles from this entry, then from nested entries (model/upgrades). BattleScribe wraps nested entries in selectionEntries, so recurse into that. */
-  function collectProfiles(entry: Element): Element[] {
-    const out: Element[] = [];
-    const profilesEl = q(entry, "profiles");
-    if (profilesEl) out.push(...qAll(profilesEl, "profile"));
-    const selectionEntriesEl = q(entry, "selectionEntries");
-    if (selectionEntriesEl) {
-      for (const child of childrenByLocalName(selectionEntriesEl, "selectionEntry")) {
-        out.push(...collectProfiles(child));
-      }
-    }
-    return out;
-  }
-
   for (const entry of Array.from(entries)) {
     const type = (getAttr(entry, "type") || "").toLowerCase();
     if (type !== "unit" && type !== "model") continue;
@@ -205,7 +406,7 @@ export function parseCatXml(xml: string): ParseResult {
     const unitName = getAttr(entry, "name") || text(q(entry, "name")) || "Unknown";
     const id = crypto.randomUUID();
 
-    const profileEls = collectProfiles(entry);
+    const profileEls = collectProfilesFromEntry(entry);
     let move = "";
     let health = "";
     let save = "";
@@ -250,93 +451,36 @@ export function parseCatXml(xml: string): ParseResult {
         });
       }
 
-      if (profileType.includes("ability") || profileType.includes("effect")) {
-        const declare = getCharacteristic(profile, "Declare");
-        const effect = getCharacteristic(profile, "Effect", "Description", "Rules");
-        if (!declare && !effect && !profileName) continue;
-        const typeStr = getAttribute(profile, "Type") || getCharacteristic(profile, "Type", "Ability Type");
-        // Use direct characteristics only for Timing so we never read a sibling profile's Timing (browser DOM safety)
-        const timingChar = getCharacteristicDirect(profile, "Timing", "Phase", "When");
-        const timingStr = getAttribute(profile, "Timing") || getAttribute(profile, "Phase") || timingChar;
-        const combined = `${timingStr} ${typeStr}`.trim();
-
-        // Passive: no Timing/Phase/When in this profile's characteristics is the primary signal; typeName="Ability (Passive)" as backup
-        const rawTypeName = (getAttr(profile, "typeName") || getAttr(profile, "type") || "").trim();
-        const isExplicitlyPassive = /ability\s*\(\s*passive\s*\)/i.test(rawTypeName);
-        const hasTimingChar = Boolean(timingChar?.trim());
-        const isPassive = Boolean(
-          (!hasTimingChar && (declare || effect || profileName)) ||
-            isExplicitlyPassive ||
-            profileType.includes("passive") ||
-            /passive/i.test(typeStr) ||
-            /passive/i.test(combined)
-        );
-
-        let phase: AbilityPhase | undefined;
-        let timing: AbilityTimingQualifier | undefined;
-        let abilityType: AbilityType | undefined;
-
-        if (isPassive) {
-          timing = "Passive";
-          phase = undefined;
-          abilityType = undefined;
-        } else {
-          phase = normalizePhase(timingStr) ?? normalizePhase(combined);
-          timing = parseTiming(combined) ?? parseTiming(timingStr);
-          abilityType = parseAbilityType(combined) ?? parseAbilityType(typeStr);
-        }
-
-        // Activated abilities: infer colour from Timing (phase); passive uses profile Color
-        let color = normalizeColor(getAttribute(profile, "Color") || getCharacteristic(profile, "Color", "Colour"));
-        if (!isPassive && phase) color = PHASE_TO_COLOR[phase];
-
-        if (BATTLESCRIBE_ABILITY_DEBUG && typeof console !== "undefined" && console.log) {
-          console.log("[battlescribe ability]", {
-            name: profileName || "Ability",
-            rawTypeName,
-            profileType,
-            timingChar: timingChar || "(empty)",
-            timingStr: timingStr || "(empty)",
-            hasTimingChar,
-            isExplicitlyPassive,
-            isPassive,
-            phase,
-            timing,
-          });
-        }
-
-        const isReaction = !isPassive && (/reaction\s*:/i.test(combined) || /reaction\s*:/i.test(effect));
-        let reactionAbilityType: string | undefined;
-        let reactionPhase: string | undefined;
-        if (isReaction) {
-          timing = "Reaction";
-          const match = effect?.match(/Reaction:\s*([^\n.]+)/i) ?? combined.match(/Reaction:\s*(.+)/i);
-          if (match) reactionAbilityType = stripWeaponAbility(match[1].trim());
-        }
-
-        const abilityText = buildAbilityText(declare, effect, profileName);
-        abilities.push({
-          id: crypto.randomUUID(),
-          name: profileName || "Ability",
-          color,
-          phase,
-          timing,
-          abilityType,
-          reactionAbilityType,
-          reactionPhase,
-          text: abilityText,
-        });
-      }
+      const ability = parseAbilityFromProfile(profile);
+      if (ability) abilities.push(ability);
     }
 
     const keywords: string[] = [];
     const catLinks = q(entry, "categoryLinks");
+    const categoryNames: string[] = [];
     for (const link of catLinks ? qAll(catLinks, "categoryLink") : []) {
       const name = getAttr(link, "name") || text(link);
       if (!name) continue;
       const wardMatch = /^WARD\s*\((\d+\+)\)$/i.exec(name);
       if (wardMatch) ward = wardMatch[1];
       else if (!keywords.includes(name)) keywords.push(name);
+      categoryNames.push(name);
+    }
+    const UNIT_TYPE_MAP: Array<{ pattern: RegExp; type: UnitType }> = [
+      { pattern: /^HERO$/i, type: "hero" },
+      { pattern: /^INFANTRY$/i, type: "infantry" },
+      { pattern: /^CAVALRY$/i, type: "cavalry" },
+      { pattern: /^BEAST$/i, type: "beast" },
+      { pattern: /^MONSTER$/i, type: "monster" },
+      { pattern: /^WAR\s*MACHINE$/i, type: "war machine" },
+      { pattern: /^MANIFESTATION$/i, type: "manifestation" },
+    ];
+    let unitType: UnitType | undefined;
+    for (const { pattern, type } of UNIT_TYPE_MAP) {
+      if (categoryNames.some((n) => pattern.test(n))) {
+        unitType = type;
+        break;
+      }
     }
 
     /** Dedupe weapons by name + ranged (same weapon can appear under multiple model branches). */
@@ -363,10 +507,13 @@ export function parseCatXml(xml: string): ParseResult {
       });
     }
 
+    applyBattleDamageMarkers(abilities, dedupedWeapons);
+
     warscrolls.push({
       id,
       unitName,
       faction,
+      unitType,
       move: move || "-",
       health: health || "-",
       save: save || "-",
@@ -381,6 +528,98 @@ export function parseCatXml(xml: string): ParseResult {
   }
 
   return { warscrolls, faction };
+}
+
+export interface ParseBattleTraitResult {
+  battleTraits: BattleTrait[];
+  faction: string;
+}
+
+/**
+ * Parse a battle trait catalogue XML (e.g. Fyreslayers.cat — army name only, no " - Library").
+ * Walks sharedSelectionEntryGroups; each selectionEntry with ability profiles becomes one BattleTrait.
+ * When loresXml is provided, lore entries (Prayer/Spell/Manifestation) with entryLinks are resolved
+ * to fetch spells/prayers from the Lores catalogue.
+ */
+export function parseBattleTraitCatXml(xml: string, loresXml?: string): ParseBattleTraitResult {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, "text/xml");
+  const catalogue = q(doc, "catalogue");
+  const faction = (catalogue ? getAttr(catalogue, "name") : "")?.trim() || "Imported";
+  const root = catalogue ?? doc.documentElement;
+
+  let loresDoc: Document | null = null;
+  if (loresXml) {
+    loresDoc = parser.parseFromString(loresXml, "text/xml");
+  }
+
+  const entriesWithGroups = [
+    ...collectSelectionEntriesFromGroups(root),
+    ...collectSelectionEntriesFromShared(root),
+  ];
+  const battleTraits: BattleTrait[] = [];
+  const now = new Date().toISOString();
+  const seenIds = new Set<string>();
+  const seenNameKey = new Set<string>();
+
+  const LORE_TRAIT_TYPES: BattleTraitType[] = ["Prayer lores", "Spell lores", "Manifestation Lores"];
+
+  const SKIP_ENTRY_NAMES = ["Battle Wounds", "Drained"];
+  for (const { entry, groupName } of entriesWithGroups) {
+    const entryId = getAttr(entry, "id");
+    const name = getAttr(entry, "name") || text(q(entry, "name")) || "Unknown";
+    if (SKIP_ENTRY_NAMES.includes(name)) continue;
+    const traitType = mapGroupNameToTraitType(groupName);
+    const key = `${name}|${faction}`;
+    if (entryId && seenIds.has(entryId)) continue;
+    if (seenNameKey.has(key)) continue;
+    const profileEls = collectProfilesFromEntry(entry);
+    let abilities: Ability[] = [];
+    for (const profile of profileEls) {
+      const ability = parseAbilityFromProfile(profile);
+      if (ability) abilities.push(ability);
+    }
+    if (abilities.length === 0 && loresDoc && LORE_TRAIT_TYPES.includes(traitType)) {
+      const entryLinksEl = q(entry, "entryLinks");
+      if (entryLinksEl) {
+        for (const link of childrenByLocalName(entryLinksEl, "entryLink")) {
+          const targetId = getAttr(link, "targetId");
+          const linkType = getAttr(link, "type");
+          if (!targetId) continue;
+          const target = findById(loresDoc, targetId);
+          if (target) {
+            if (linkType === "selectionEntryGroup") {
+              abilities.push(...collectLoreAbilitiesFromGroup(target));
+            } else if (linkType === "selectionEntry") {
+              const profileElsFromTarget = collectProfilesFromEntry(target);
+              for (const profile of profileElsFromTarget) {
+                const ability = parseAbilityFromProfile(profile);
+                if (ability) abilities.push(ability);
+              }
+            }
+          }
+        }
+      }
+    }
+    if (entryId) seenIds.add(entryId);
+    seenNameKey.add(key);
+    battleTraits.push({
+      id: crypto.randomUUID(),
+      name,
+      traitType,
+      faction,
+      move: "-",
+      health: "-",
+      save: "-",
+      control: "-",
+      keywords: [],
+      abilities,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  return { battleTraits, faction };
 }
 
 export function getRawCatalogueUrl(path: string): string {

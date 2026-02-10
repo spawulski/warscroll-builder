@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { Plus, X } from "lucide-react";
-import type { ArmyCollection, Warscroll, BattleTrait } from "@/types/warscroll";
+import type { ArmyCollection, Warscroll, BattleTrait, UnitType, BattleTraitType } from "@/types/warscroll";
+import { UNIT_TYPE_ORDER, TRAIT_TYPE_ORDER } from "@/types/warscroll";
 
 interface ArmyCollectionFormProps {
   collection: ArmyCollection;
@@ -40,6 +41,12 @@ export default function ArmyCollectionForm({
   const selectedTraits = collection.battleTraitIds
     .map((id) => battleTraits.find((t) => t.id === id))
     .filter(Boolean) as BattleTrait[];
+
+  const uniqueFactions = useMemo(() => {
+    const fromWarscrolls = warscrolls.map((w) => w.faction).filter((f): f is string => Boolean(f));
+    const fromTraits = battleTraits.map((t) => t.faction).filter((f): f is string => Boolean(f));
+    return [...new Set([...fromWarscrolls, ...fromTraits])].sort();
+  }, [warscrolls, battleTraits]);
 
   const addWarscroll = useCallback(
     (id: string) => {
@@ -81,16 +88,33 @@ export default function ArmyCollectionForm({
         <h3 className="mb-3 text-sm font-bold uppercase text-slate-600">
           Army Collection
         </h3>
-        <label className="block">
-          <span className="text-xs font-medium text-slate-600">Name</span>
-          <input
-            type="text"
-            value={collection.name}
-            onChange={(e) => update({ name: e.target.value })}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            placeholder="e.g. My Stormcast List"
-          />
-        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-xs font-medium text-slate-600">Name</span>
+            <input
+              type="text"
+              value={collection.name}
+              onChange={(e) => update({ name: e.target.value })}
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="e.g. My Stormcast List"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-slate-600">Faction</span>
+            <select
+              value={collection.faction ?? ""}
+              onChange={(e) => update({ faction: e.target.value || undefined })}
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">None / All</option>
+              {uniqueFactions.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -109,11 +133,28 @@ export default function ArmyCollectionForm({
               className="rounded border border-slate-300 px-2 py-1.5 text-sm"
             >
               <option value="">Add a warscroll…</option>
-              {availableWarscrolls.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.unitName || "Untitled"}
-                </option>
-              ))}
+              {([...UNIT_TYPE_ORDER, null] as (UnitType | null)[]).map((unitType) => {
+                const groupLabel =
+                  unitType === null
+                    ? "Other"
+                    : unitType.charAt(0).toUpperCase() + unitType.slice(1);
+                const inGroup = availableWarscrolls.filter(
+                  (w) =>
+                    unitType === null
+                      ? !w.unitType || !UNIT_TYPE_ORDER.includes(w.unitType as UnitType)
+                      : w.unitType === unitType
+                );
+                if (inGroup.length === 0) return null;
+                return (
+                  <optgroup key={unitType ?? "_other"} label={groupLabel}>
+                    {inGroup.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.unitName || "Untitled"}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
             </select>
             <Plus className="h-4 w-4 text-slate-400" />
           </div>
@@ -162,11 +203,25 @@ export default function ArmyCollectionForm({
               className="rounded border border-slate-300 px-2 py-1.5 text-sm"
             >
               <option value="">Add a battle trait…</option>
-              {availableTraits.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name || "Untitled"}
-                </option>
-              ))}
+              {([...TRAIT_TYPE_ORDER, null] as (BattleTraitType | null)[]).map((traitType) => {
+                const groupLabel = traitType ?? "Other";
+                const inGroup = availableTraits.filter(
+                  (t) =>
+                    traitType === null
+                      ? !t.traitType || !TRAIT_TYPE_ORDER.includes(t.traitType as BattleTraitType)
+                      : t.traitType === traitType
+                );
+                if (inGroup.length === 0) return null;
+                return (
+                  <optgroup key={traitType ?? "_other"} label={groupLabel}>
+                    {inGroup.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name || "Untitled"}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
             </select>
             <Plus className="h-4 w-4 text-slate-400" />
           </div>

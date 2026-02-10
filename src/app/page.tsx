@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Printer, Trash2, Edit2, Download, Loader2 } from "lucide-react";
-import type { Warscroll, BattleTrait, ArmyCollection } from "@/types/warscroll";
+import { Plus, Printer, Trash2, Edit2, Download, Loader2, FileText } from "lucide-react";
+import type { Warscroll, BattleTrait, ArmyCollection, BattleTraitType, UnitType } from "@/types/warscroll";
+import { UNIT_TYPE_ORDER, TRAIT_TYPE_ORDER } from "@/types/warscroll";
 import {
   createEmptyWarscroll,
   createEmptyBattleTrait,
@@ -25,8 +26,15 @@ import BattleTraitCard from "@/components/BattleTraitCard";
 import BattleTraitForm from "@/components/BattleTraitForm";
 import ArmyCollectionForm from "@/components/ArmyCollectionForm";
 import PrintSheet from "@/components/PrintSheet";
-import { listCatalogues, fetchCatalogueXml, type CatalogueItem } from "@/lib/github-catalogues";
-import { parseCatXml } from "@/lib/battlescribe";
+import CheatSheet from "@/components/CheatSheet";
+import {
+  listCatalogues,
+  fetchCatalogueXml,
+  getBattleTraitCataloguePath,
+  LORES_CATALOGUE_PATH,
+  type CatalogueItem,
+} from "@/lib/github-catalogues";
+import { parseCatXml, parseBattleTraitCatXml } from "@/lib/battlescribe";
 
 type View = "list" | "editor" | "print";
 type Section = "warscrolls" | "traits" | "collections";
@@ -43,13 +51,19 @@ export default function Home() {
   const [showPrint, setShowPrint] = useState(false);
   const [printWarscrolls, setPrintWarscrolls] = useState<Warscroll[]>([]);
   const [printBattleTraits, setPrintBattleTraits] = useState<BattleTrait[]>([]);
+  const [showCheatSheet, setShowCheatSheet] = useState(false);
+  const [cheatSheetCollection, setCheatSheetCollection] = useState<ArmyCollection | null>(null);
   const [cardLayout, setCardLayout] = useState<"portrait" | "landscape">("portrait");
   const [catalogues, setCatalogues] = useState<CatalogueItem[]>([]);
   const [selectedCataloguePath, setSelectedCataloguePath] = useState<string>("");
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccessCount, setImportSuccessCount] = useState<number | null>(null);
+  const [importTraitCount, setImportTraitCount] = useState<number | null>(null);
   const [importUrl, setImportUrl] = useState("");
+  const [selectedWarscrollFactions, setSelectedWarscrollFactions] = useState<Set<string>>(new Set());
+  const [selectedWarscrollUnitTypes, setSelectedWarscrollUnitTypes] = useState<Set<UnitType>>(new Set());
+  const [selectedTraitFactions, setSelectedTraitFactions] = useState<Set<string>>(new Set());
 
   const loadStored = useCallback(() => {
     setWarscrolls(getAllWarscrolls());
@@ -91,21 +105,43 @@ export default function Home() {
     setImportLoading(true);
     setImportError(null);
     setImportSuccessCount(null);
+    setImportTraitCount(null);
     try {
       const xml = await fetchCatalogueXml(pathOrUrl);
       const { warscrolls: parsed, faction } = parseCatXml(xml);
       for (const w of parsed) {
         saveWarscroll({ ...w, faction: faction || w.faction });
       }
+      let traitCount = 0;
+      const isLibraryPath =
+        !pathOrUrl.startsWith("http") && / - Library\.cat$/i.test(pathOrUrl);
+      if (isLibraryPath) {
+        try {
+          const traitPath = getBattleTraitCataloguePath(pathOrUrl);
+          const [traitXml, loresXml] = await Promise.all([
+            fetchCatalogueXml(traitPath),
+            fetchCatalogueXml(LORES_CATALOGUE_PATH).catch(() => ""),
+          ]);
+          const { battleTraits: traits } = parseBattleTraitCatXml(traitXml, loresXml || undefined);
+          for (const t of traits) {
+            saveBattleTrait(t);
+            traitCount += 1;
+          }
+        } catch {
+          // Battle trait file may not exist for this army; ignore
+        }
+      }
       loadStored();
+      loadTraits();
       setImportSuccessCount(parsed.length);
+      setImportTraitCount(traitCount);
       setImportUrl("");
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Import failed");
     } finally {
       setImportLoading(false);
     }
-  }, [selectedCataloguePath, importUrl, loadStored]);
+  }, [selectedCataloguePath, importUrl, loadStored, loadTraits]);
 
   const handleSave = useCallback(
     (w: Warscroll) => {
@@ -218,6 +254,46 @@ export default function Home() {
     setShowPrint(true);
   }, [warscrolls, battleTraits]);
 
+  const uniqueWarscrollFactions = [...new Set(warscrolls.map((w) => w.faction).filter((f): f is string => Boolean(f)))].sort();
+  const uniqueWarscrollUnitTypes = [...new Set(warscrolls.map((w) => w.unitType).filter((t): t is UnitType => t != null && UNIT_TYPE_ORDER.includes(t)))].sort(
+    (a, b) => UNIT_TYPE_ORDER.indexOf(a) - UNIT_TYPE_ORDER.indexOf(b)
+  );
+  const uniqueTraitFactions = [...new Set(battleTraits.map((t) => t.faction).filter((f): f is string => Boolean(f)))].sort();
+
+  const filteredWarscrolls = warscrolls.filter(
+    (w) =>
+      (selectedWarscrollFactions.size === 0 || selectedWarscrollFactions.has(w.faction)) &&
+      (selectedWarscrollUnitTypes.size === 0 || (w.unitType && selectedWarscrollUnitTypes.has(w.unitType)))
+  );
+  const filteredBattleTraits = battleTraits.filter(
+    (t) => selectedTraitFactions.size === 0 || (t.faction != null && selectedTraitFactions.has(t.faction))
+  );
+
+  const toggleWarscrollFaction = useCallback((faction: string) => {
+    setSelectedWarscrollFactions((prev) => {
+      const next = new Set(prev);
+      if (next.has(faction)) next.delete(faction);
+      else next.add(faction);
+      return next;
+    });
+  }, []);
+  const toggleWarscrollUnitType = useCallback((unitType: UnitType) => {
+    setSelectedWarscrollUnitTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(unitType)) next.delete(unitType);
+      else next.add(unitType);
+      return next;
+    });
+  }, []);
+  const toggleTraitFaction = useCallback((faction: string) => {
+    setSelectedTraitFactions((prev) => {
+      const next = new Set(prev);
+      if (next.has(faction)) next.delete(faction);
+      else next.add(faction);
+      return next;
+    });
+  }, []);
+
   const openPrintCollection = useCallback(
     (c: ArmyCollection) => {
       const ws = c.warscrollIds
@@ -232,6 +308,11 @@ export default function Home() {
     },
     [warscrolls, battleTraits]
   );
+
+  const openCheatSheet = useCallback((c: ArmyCollection) => {
+    setCheatSheetCollection(c);
+    setShowCheatSheet(true);
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -350,8 +431,17 @@ export default function Home() {
                 {importError && (
                   <span className="text-sm text-red-600">{importError}</span>
                 )}
-                {importSuccessCount !== null && (
-                  <span className="text-sm text-green-700">Imported {importSuccessCount} unit{importSuccessCount !== 1 ? "s" : ""}</span>
+                {importSuccessCount !== null && (importSuccessCount > 0 || (importTraitCount != null && importTraitCount > 0)) && (
+                  <span className="text-sm text-green-700">
+                    Imported
+                    {importSuccessCount > 0 && (
+                      <> {importSuccessCount} unit{importSuccessCount !== 1 ? "s" : ""}</>
+                    )}
+                    {importSuccessCount > 0 && importTraitCount != null && importTraitCount > 0 && ", "}
+                    {importTraitCount != null && importTraitCount > 0 && (
+                      <> {importTraitCount} battle trait{importTraitCount !== 1 ? "s" : ""}</>
+                    )}
+                  </span>
                 )}
               </div>
             </div>
@@ -376,6 +466,48 @@ export default function Home() {
                 </button>
               </div>
             </div>
+            {warscrolls.length > 0 && (uniqueWarscrollFactions.length > 0 || uniqueWarscrollUnitTypes.length > 0) && (
+              <div className="flex flex-wrap gap-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                {uniqueWarscrollFactions.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium uppercase text-slate-500">Faction</span>
+                    {uniqueWarscrollFactions.map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => toggleWarscrollFaction(f)}
+                        className={`rounded-full px-3 py-1 text-sm font-medium transition ${
+                          selectedWarscrollFactions.has(f)
+                            ? "bg-slate-700 text-white"
+                            : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {uniqueWarscrollUnitTypes.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium uppercase text-slate-500">Unit type</span>
+                    {uniqueWarscrollUnitTypes.map((ut) => (
+                      <button
+                        key={ut}
+                        type="button"
+                        onClick={() => toggleWarscrollUnitType(ut)}
+                        className={`rounded-full px-3 py-1 text-sm font-medium transition ${
+                          selectedWarscrollUnitTypes.has(ut)
+                            ? "bg-slate-700 text-white"
+                            : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        {ut.charAt(0).toUpperCase() + ut.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {warscrolls.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-12 text-center text-slate-600">
                 <p className="font-medium">No warscrolls yet.</p>
@@ -383,42 +515,112 @@ export default function Home() {
                   Create one from scratch.
                 </p>
               </div>
+            ) : filteredWarscrolls.length === 0 ? (
+              <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-12 text-center text-slate-600">
+                <p className="font-medium">No units match the selected filters.</p>
+                <p className="mt-1 text-sm">Clear faction and unit type filters to see all units.</p>
+              </div>
             ) : (
-              <ul className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
-                {warscrolls.map((w) => (
-                  <li
-                    key={w.id}
-                    className="group relative rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
-                  >
-                    <div className="p-2">
-                      <WarscrollCard
-                        warscroll={w}
-                        showExpand
-                        maxAbilityLength={80}
-                        landscape={cardLayout === "landscape"}
-                      />
-                    </div>
-                    <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
-                      <button
-                        type="button"
-                        onClick={() => handleEdit(w)}
-                        className="rounded bg-slate-600 p-1.5 text-white hover:bg-slate-500"
-                        title="Edit"
+              <div className="space-y-8">
+                {UNIT_TYPE_ORDER.map((unitType) => {
+                  const inType = filteredWarscrolls.filter((w) => w.unitType === unitType);
+                  if (inType.length === 0) return null;
+                  return (
+                    <section key={unitType}>
+                      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-600">
+                        {unitType.charAt(0).toUpperCase() + unitType.slice(1)}
+                      </h2>
+                      <ul
+                        className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}
                       >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(w.id)}
-                        className="rounded bg-red-600 p-1.5 text-white hover:bg-red-500"
-                        title="Delete"
+                        {inType.map((w) => (
+                          <li
+                            key={w.id}
+                            className="group relative rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
+                          >
+                            <div className="p-2">
+                              <WarscrollCard
+                                warscroll={w}
+                                showExpand
+                                maxAbilityLength={80}
+                                landscape={cardLayout === "landscape"}
+                              />
+                            </div>
+                            <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(w)}
+                                className="rounded bg-slate-600 p-1.5 text-white hover:bg-slate-500"
+                                title="Edit"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(w.id)}
+                                className="rounded bg-red-600 p-1.5 text-white hover:bg-red-500"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  );
+                })}
+                {(() => {
+                  const others = filteredWarscrolls.filter(
+                    (w) => !w.unitType || !UNIT_TYPE_ORDER.includes(w.unitType as UnitType)
+                  );
+                  if (others.length === 0) return null;
+                  return (
+                    <section key="other">
+                      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-600">
+                        Other
+                      </h2>
+                      <ul
+                        className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                        {others.map((w) => (
+                          <li
+                            key={w.id}
+                            className="group relative rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
+                          >
+                            <div className="p-2">
+                              <WarscrollCard
+                                warscroll={w}
+                                showExpand
+                                maxAbilityLength={80}
+                                landscape={cardLayout === "landscape"}
+                              />
+                            </div>
+                            <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(w)}
+                                className="rounded bg-slate-600 p-1.5 text-white hover:bg-slate-500"
+                                title="Edit"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(w.id)}
+                                className="rounded bg-red-600 p-1.5 text-white hover:bg-red-500"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  );
+                })()}
+              </div>
             )}
           </div>
         )}
@@ -472,6 +674,14 @@ export default function Home() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => openCheatSheet(c)}
+                        disabled={c.warscrollIds.length === 0 && c.battleTraitIds.length === 0}
+                        className="flex items-center gap-1 rounded border border-slate-400 px-2 py-1 text-xs font-medium hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        <FileText className="h-3.5 w-3.5" /> Cheat Sheet
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleDeleteCollection(c.id)}
                         className="flex items-center gap-1 rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                       >
@@ -496,6 +706,27 @@ export default function Home() {
                 <Plus className="h-4 w-4" /> New Battle Trait
               </button>
             </div>
+            {battleTraits.length > 0 && uniqueTraitFactions.length > 0 && (
+              <div className="flex flex-wrap gap-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium uppercase text-slate-500">Faction</span>
+                  {uniqueTraitFactions.map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => toggleTraitFaction(f)}
+                      className={`rounded-full px-3 py-1 text-sm font-medium transition ${
+                        selectedTraitFactions.has(f)
+                          ? "bg-slate-700 text-white"
+                          : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {battleTraits.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-12 text-center text-slate-600">
                 <p className="font-medium">No battle traits yet.</p>
@@ -503,37 +734,57 @@ export default function Home() {
                   Create a battle trait card with a collection of abilities.
                 </p>
               </div>
+            ) : filteredBattleTraits.length === 0 ? (
+              <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-12 text-center text-slate-600">
+                <p className="font-medium">No battle traits match the selected filters.</p>
+                <p className="mt-1 text-sm">Clear faction filters to see all traits.</p>
+              </div>
             ) : (
-              <ul className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
-                {battleTraits.map((t) => (
-                  <li
-                    key={t.id}
-                    className="group relative rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
-                  >
-                    <div className="p-2">
-                      <BattleTraitCard trait={t} landscape={cardLayout === "landscape"} />
-                    </div>
-                    <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
-                      <button
-                        type="button"
-                        onClick={() => handleEditTrait(t)}
-                        className="rounded bg-slate-600 p-1.5 text-white hover:bg-slate-500"
-                        title="Edit"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTrait(t.id)}
-                        className="rounded bg-red-600 p-1.5 text-white hover:bg-red-500"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-8">
+                {TRAIT_TYPE_ORDER.map((traitType) => {
+                  const traits = filteredBattleTraits.filter(
+                    (t) => (t.traitType ?? "Battle traits") === traitType
+                  );
+                  if (traits.length === 0) return null;
+                  return (
+                    <section key={traitType}>
+                      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-600">
+                        {traitType}
+                      </h3>
+                      <ul className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
+                        {traits.map((t) => (
+                          <li
+                            key={t.id}
+                            className="group relative rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
+                          >
+                            <div className="p-2">
+                              <BattleTraitCard trait={t} landscape={cardLayout === "landscape"} />
+                            </div>
+                            <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
+                              <button
+                                type="button"
+                                onClick={() => handleEditTrait(t)}
+                                className="rounded bg-slate-600 p-1.5 text-white hover:bg-slate-500"
+                                title="Edit"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTrait(t.id)}
+                                className="rounded bg-red-600 p-1.5 text-white hover:bg-red-500"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
@@ -649,6 +900,18 @@ export default function Home() {
           warscrolls={printWarscrolls}
           battleTraits={printBattleTraits}
           onClose={() => setShowPrint(false)}
+        />
+      )}
+
+      {showCheatSheet && cheatSheetCollection && (
+        <CheatSheet
+          collection={cheatSheetCollection}
+          warscrolls={warscrolls}
+          battleTraits={battleTraits}
+          onClose={() => {
+            setShowCheatSheet(false);
+            setCheatSheetCollection(null);
+          }}
         />
       )}
     </div>

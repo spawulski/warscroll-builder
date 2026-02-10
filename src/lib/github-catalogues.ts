@@ -81,6 +81,17 @@ export async function listCatalogues(): Promise<CatalogueItem[]> {
 }
 
 /**
+ * Derive the battle trait catalogue path from a Library catalogue path.
+ * e.g. "Fyreslayers - Library.cat" → "Fyreslayers.cat"
+ */
+export function getBattleTraitCataloguePath(libraryPath: string): string {
+  return libraryPath.replace(/\s*-\s*Library\.cat$/i, ".cat");
+}
+
+/** Path to the Lores catalogue (spells, prayers, manifestation lores). */
+export const LORES_CATALOGUE_PATH = "Lores.cat";
+
+/**
  * Fetch raw XML content of a catalogue file.
  * @param path - File name (e.g. "Blades of Khorne - Library.cat") or full raw URL
  */
