@@ -116,6 +116,8 @@ export interface Warscroll {
   subfaction?: string;
   /** Derived from categoryLinks for grouping (e.g. HERO, INFANTRY). */
   unitType?: UnitType;
+  /** When set, this unit belongs to a Regiment of Renown (e.g. "Fjori's Flamebearers"). */
+  regimentOfRenown?: string;
   move: string;
   health: string;
   save: string;
@@ -218,10 +220,12 @@ export type BattleTraitType =
   | "Spell lores"
   | "Manifestation Lores"
   | "Battle formations"
+  | "Regiments of Renown"
   | "Battle traits";
 
 export const TRAIT_TYPE_ORDER: BattleTraitType[] = [
   "Battle traits",
+  "Regiments of Renown",
   "Battle formations",
   "Heroic traits",
   "Artefacts",
@@ -236,6 +240,8 @@ export interface BattleTrait {
   name: string;
   /** Section type for grouping (Prayer lores, Artefacts, etc.). */
   traitType?: BattleTraitType;
+  /** When set, this trait belongs to a Regiment of Renown (e.g. "Fjori's Flamebearers"). */
+  regimentOfRenown?: string;
   faction?: string;
   subfaction?: string;
   move: string;

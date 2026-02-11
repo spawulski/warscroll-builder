@@ -9,6 +9,7 @@ import type { Warscroll, BattleTrait, ArmyCollection, Ability, AbilityColor, Abi
 const STORAGE_KEY = "aos-warscrolls";
 const BATTLE_TRAITS_KEY = "aos-battle-traits";
 const ARMY_COLLECTIONS_KEY = "aos-army-collections";
+const REGIMENT_MAPPING_KEY = "aos-regiment-mapping";
 
 const PHASE_VALUES: AbilityPhase[] = [
   "Hero Phase", "Shooting Phase", "Combat Phase", "Charge Phase",
@@ -205,4 +206,47 @@ export function saveArmyCollection(collection: ArmyCollection): void {
 
 export function deleteArmyCollection(id: string): void {
   setArmyCollectionsStored(getArmyCollectionsStored().filter((c) => c.id !== id));
+}
+
+/** Regiment of Renown mapping: regiment name -> list of unit names in that regiment. */
+export type RegimentMapping = Record<string, string[]>;
+
+function getRegimentMappingStored(): RegimentMapping {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(REGIMENT_MAPPING_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as RegimentMapping;
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function setRegimentMappingStored(mapping: RegimentMapping): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(REGIMENT_MAPPING_KEY, JSON.stringify(mapping));
+  } catch (e) {
+    console.warn("Failed to save regiment mapping", e);
+  }
+}
+
+export function getRegimentMapping(): RegimentMapping {
+  return getRegimentMappingStored();
+}
+
+export function saveRegimentMapping(mapping: RegimentMapping): void {
+  setRegimentMappingStored(mapping);
+}
+
+export function mergeRegimentMapping(newMapping: RegimentMapping): void {
+  const existing = getRegimentMappingStored();
+  const merged = { ...existing };
+  for (const [regiment, units] of Object.entries(newMapping)) {
+    const existingUnits = merged[regiment] ?? [];
+    const combined = [...new Set([...existingUnits, ...units])];
+    merged[regiment] = combined;
+  }
+  setRegimentMappingStored(merged);
 }

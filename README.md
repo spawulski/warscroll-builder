@@ -1,23 +1,23 @@
-# Warscroll Architect
+# Cards.TabletopToolbox
 
-A web app for creating, managing, and printing **Warhammer Age of Sigmar (4th Edition)** Warscrolls.
+A web app for creating, managing, and printing **Warhammer Age of Sigmar (4th Edition)** unit cards and battle traits. Live at [cards.tabletoptoolbox.shop](https://cards.tabletoptoolbox.shop).
 
 ## Tech stack
 
 - **Next.js 14** (App Router)
 - **Tailwind CSS**
 - **LocalStorage** (MVP persistence)
-- **Tesseract.js** (OCR for image scanning)
 - **react-to-print** (print sheet)
 - **Lucide React** (icons)
 
 ## Features
 
-- **Create Warscrolls** – Unit name, faction, characteristics (Move, Health, Save, Control, Ward), weapon profiles (ranged/melee), abilities (with phase timing and type), and keywords.
-- **Upload & scan** – “Upload Warscroll Image” uses OCR to extract text, then a **review step** to confirm parsed data before editing.
+- **Create unit cards** – Unit name, faction, characteristics (Move, Health, Save, Control, Ward), weapon profiles (ranged/melee), abilities (with phase timing and type), and keywords.
+- **Import from BSData** – Import units and battle traits from the age-of-sigmar-4th catalogue.
 - **Live preview** – Editor and card preview side by side.
-- **Print sheet** – 4 Warscrolls per A4/Letter page (2×2 grid), compact layout for print.
-- **My Warscrolls** – List, edit, delete; all stored in LocalStorage.
+- **Print sheet** – 4 cards per A4/Letter page (2×2 grid), compact layout for print.
+- **Regiments of Renown** – Import individual regiments with their units and battle traits.
+- **Army collections** – Save sets of cards and battle traits for quick access.
 
 ## Getting started
 
@@ -28,8 +28,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-- **New Warscroll** – Start from scratch.
-- **Upload Image (OCR)** – Scan an image, review parsed text, then edit and save.
+- **New Card** – Start from scratch.
+- **Import** – Import from BSData faction catalogues or Regiments of Renown.
 - **Print** – Opens a print view with 4 cards per page; use the Print button or browser print (Ctrl/Cmd+P).
 
 ## Project layout
@@ -37,8 +37,8 @@ Open [http://localhost:3000](http://localhost:3000).
 ```
 src/
   app/           – layout, page, globals
-  components/    – WarscrollCard, WarscrollForm, ScanAndReview, PrintSheet
-  lib/           – ocr (parse OCR → Warscroll), storage (LocalStorage)
+  components/    – WarscrollCard, WarscrollForm, PrintSheet, CheatSheet
+  lib/           – battlescribe (parse .cat XML), storage (LocalStorage)
   types/         – warscroll schema (Warscroll, WeaponProfile, Ability, etc.)
 ```
 
@@ -51,6 +51,10 @@ src/
 - **Keywords:** List of tags
 
 Ability timing uses the standard phase colours (e.g. yellow Hero Phase, red Combat Phase).
+
+## Footer links
+
+GitHub and Ko-fi links are configured in `src/lib/site-config.ts`. Override via `.env.local` if needed.
 
 ## License
 

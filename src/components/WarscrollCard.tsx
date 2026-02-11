@@ -150,10 +150,12 @@ export default function WarscrollCard({
     (landscape ? "flex flex-col max-w-none " : "");
 
   const factionLine = [warscroll.faction, warscroll.subfaction].filter(Boolean).join(" • ") || "—";
+  const isScourgeOfGhyran = warscroll.subfaction === "Scourge of Ghyran";
+  const headerBgClass = isScourgeOfGhyran ? "bg-green-800" : "bg-slate-800";
 
   const headerEl = React.createElement(
     "header",
-    { key: "h", className: "flex flex-wrap items-baseline gap-x-2 gap-y-0 bg-slate-800 px-3 py-1.5 text-white flex-shrink-0" },
+    { key: "h", className: `flex flex-wrap items-baseline gap-x-2 gap-y-0 ${headerBgClass} px-3 py-1.5 text-white flex-shrink-0` },
     React.createElement("h2", { className: "text-base font-bold leading-tight" }, warscroll.unitName || "Untitled Unit"),
     React.createElement("span", { className: "text-[11px] text-slate-300" }, factionLine)
   );

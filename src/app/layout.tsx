@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import SiteFooter from "@/components/SiteFooter";
 
 export const metadata: Metadata = {
-  title: "Warscroll Architect",
-  description: "Create, manage, and print Warhammer Age of Sigmar 4th Edition Warscrolls",
+  title: "Cards.TabletopToolbox",
+  description: "Create, manage, and print Warhammer Age of Sigmar 4th Edition unit cards and battle traits. cards.tabletoptoolbox.shop",
 };
 
 export default function RootLayout({
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen">{children}</body>
+      <body className="flex min-h-screen flex-col">
+        <div className="flex-1">{children}</div>
+        <SiteFooter />
+      </body>
     </html>
   );
 }

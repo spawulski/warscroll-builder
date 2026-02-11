@@ -23,7 +23,7 @@ export default function PrintSheet({ warscrolls, battleTraits = [], onClose }: P
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
-    documentTitle: "AoS Warscrolls",
+    documentTitle: "AoS Cards",
     pageStyle:
       orientation === "landscape"
         ? `

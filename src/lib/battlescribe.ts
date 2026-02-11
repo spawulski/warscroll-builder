@@ -10,6 +10,31 @@ const RAW_BASE = "https://raw.githubusercontent.com/BSData/age-of-sigmar-4th/mai
 /** Set to true to log ability parsing (rawTypeName, timingChar, isPassive, phase) to console for debugging. */
 const BATTLESCRIBE_ABILITY_DEBUG = false;
 
+/** Publication ID for Scourge of Ghyran content (units, traits, formations, etc.). */
+const SCOURGE_OF_GHYRAN_PUBLICATION_ID = "f894-7929-f79a-a269";
+
+/** Check if element or any ancestor has Scourge of Ghyran publicationId. */
+function hasScourgeOfGhyranInAncestry(el: Element | null): boolean {
+  let cur: Element | null = el;
+  while (cur) {
+    if (getAttr(cur, "publicationId") === SCOURGE_OF_GHYRAN_PUBLICATION_ID) return true;
+    cur = cur.parentElement;
+  }
+  return false;
+}
+
+/**
+ * Parse name that may end with " (Subfaction)" e.g. "Auric Runeson on Magmadroth (Scourge of Ghyran)".
+ * Returns base name and optional subfaction.
+ */
+function parseNameAndSubfaction(fullName: string): { name: string; subfaction?: string } {
+  const m = fullName.match(/^(.+?)\s+\(([^)]+)\)\s*$/);
+  if (m) {
+    return { name: m[1].trim(), subfaction: m[2].trim() };
+  }
+  return { name: fullName.trim() };
+}
+
 function text(el: Element | null): string {
   return el?.textContent?.trim() ?? "";
 }
@@ -403,7 +428,8 @@ export function parseCatXml(xml: string): ParseResult {
     const type = (getAttr(entry, "type") || "").toLowerCase();
     if (type !== "unit" && type !== "model") continue;
 
-    const unitName = getAttr(entry, "name") || text(q(entry, "name")) || "Unknown";
+    const rawName = getAttr(entry, "name") || text(q(entry, "name")) || "Unknown";
+    const { name: unitName, subfaction } = parseNameAndSubfaction(rawName);
     const id = crypto.randomUUID();
 
     const profileEls = collectProfilesFromEntry(entry);
@@ -513,6 +539,7 @@ export function parseCatXml(xml: string): ParseResult {
       id,
       unitName,
       faction,
+      subfaction,
       unitType,
       move: move || "-",
       health: health || "-",
@@ -567,10 +594,13 @@ export function parseBattleTraitCatXml(xml: string, loresXml?: string): ParseBat
   const SKIP_ENTRY_NAMES = ["Battle Wounds", "Drained"];
   for (const { entry, groupName } of entriesWithGroups) {
     const entryId = getAttr(entry, "id");
-    const name = getAttr(entry, "name") || text(q(entry, "name")) || "Unknown";
-    if (SKIP_ENTRY_NAMES.includes(name)) continue;
+    const rawName = getAttr(entry, "name") || text(q(entry, "name")) || "Unknown";
+    if (SKIP_ENTRY_NAMES.includes(rawName)) continue;
+    const { name, subfaction: nameSubfaction } = parseNameAndSubfaction(rawName);
+    let subfaction =
+      nameSubfaction ?? (hasScourgeOfGhyranInAncestry(entry) ? "Scourge of Ghyran" : undefined);
     const traitType = mapGroupNameToTraitType(groupName);
-    const key = `${name}|${faction}`;
+    const key = `${name}|${faction}|${subfaction ?? ""}`;
     if (entryId && seenIds.has(entryId)) continue;
     if (seenNameKey.has(key)) continue;
     const profileEls = collectProfilesFromEntry(entry);
@@ -590,12 +620,14 @@ export function parseBattleTraitCatXml(xml: string, loresXml?: string): ParseBat
           if (target) {
             if (linkType === "selectionEntryGroup") {
               abilities.push(...collectLoreAbilitiesFromGroup(target));
+              if (hasScourgeOfGhyranInAncestry(target)) subfaction = "Scourge of Ghyran";
             } else if (linkType === "selectionEntry") {
               const profileElsFromTarget = collectProfilesFromEntry(target);
               for (const profile of profileElsFromTarget) {
                 const ability = parseAbilityFromProfile(profile);
                 if (ability) abilities.push(ability);
               }
+              if (hasScourgeOfGhyranInAncestry(target)) subfaction = "Scourge of Ghyran";
             }
           }
         }
@@ -608,6 +640,7 @@ export function parseBattleTraitCatXml(xml: string, loresXml?: string): ParseBat
       name,
       traitType,
       faction,
+      subfaction,
       move: "-",
       health: "-",
       save: "-",
@@ -620,6 +653,187 @@ export function parseBattleTraitCatXml(xml: string, loresXml?: string): ParseBat
   }
 
   return { battleTraits, faction };
+}
+
+/** Publication ID for Regiments of Renown content. */
+const REGIMENTS_OF_RENOWN_PUBLICATION_ID = "27d9-b0c5-1ecc-ba2f";
+
+/**
+ * Parse Regiments of Renown catalogue XML to extract only the list of regiment names.
+ * Lightweight - used to populate the dropdown without full parsing.
+ */
+export function listRegimentNamesFromXml(xml: string): string[] {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, "text/xml");
+  const catalogue = q(doc, "catalogue");
+  const root = catalogue ?? doc.documentElement;
+  const shared = q(root, "sharedSelectionEntries");
+  if (!shared) return [];
+  const names: string[] = [];
+  for (const entry of childrenByLocalName(shared, "selectionEntry")) {
+    const rawName = getAttr(entry, "name") || "";
+    if (!rawName.startsWith("Regiment of Renown:")) continue;
+    const pubId = getAttr(entry, "publicationId");
+    if (pubId !== REGIMENTS_OF_RENOWN_PUBLICATION_ID) continue;
+    const regimentName = decodeEntities(rawName.replace(/^Regiment of Renown:\s*/i, "").trim());
+    if (regimentName && !names.includes(regimentName)) names.push(regimentName);
+  }
+  return names.sort();
+}
+
+/** Extract childId from modifier condition (scope="force"). */
+function getChildIdFromModifier(entry: Element): string | null {
+  const modifiersEl = q(entry, "modifiers");
+  if (!modifiersEl) return null;
+  for (const mod of childrenByLocalName(modifiersEl, "modifier")) {
+    const conditionsEl = q(mod, "conditions");
+    if (!conditionsEl) continue;
+    for (const cond of childrenByLocalName(conditionsEl, "condition")) {
+      if (getAttr(cond, "scope") === "force" && getAttr(cond, "type") === "instanceOf") {
+        const childId = getAttr(cond, "childId");
+        if (childId) return childId;
+      }
+    }
+  }
+  return null;
+}
+
+/** Extract childId from modifierGroup (used in entryLinks). */
+function getChildIdFromEntryLink(link: Element): string | null {
+  const modGroupsEl = q(link, "modifierGroups");
+  if (!modGroupsEl) return null;
+  for (const mg of childrenByLocalName(modGroupsEl, "modifierGroup")) {
+    const conditionsEl = q(mg, "conditions");
+    if (!conditionsEl) continue;
+    for (const cond of childrenByLocalName(conditionsEl, "condition")) {
+      if (getAttr(cond, "scope") === "force" && getAttr(cond, "type") === "instanceOf") {
+        const childId = getAttr(cond, "childId");
+        if (childId) return childId;
+      }
+    }
+  }
+  return null;
+}
+
+export interface ParseRegimentsResult {
+  battleTraits: BattleTrait[];
+  regimentMapping: Record<string, string[]>;
+}
+
+/**
+ * Parse Regiments of Renown catalogue XML.
+ * - Extracts regiment battle traits (abilities from each "Regiment of Renown: X" upgrade).
+ * - Builds mapping: regiment name -> list of unit names (from entryLinks with childId conditions).
+ * @param xml - Raw catalogue XML content
+ * @param onlyRegiment - When set, only parse and return this regiment's traits and unit mapping
+ */
+export function parseRegimentsOfRenownCatXml(xml: string, onlyRegiment?: string): ParseRegimentsResult {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, "text/xml");
+  const catalogue = q(doc, "catalogue");
+  const root = catalogue ?? doc.documentElement;
+
+  const regimentMapping: Record<string, string[]> = {};
+  const childIdToRegiment: Record<string, string> = {};
+
+  const filterByRegiment = onlyRegiment?.trim();
+
+  // 1. From sharedSelectionEntries: regiment upgrades with name "Regiment of Renown: X"
+  const shared = q(root, "sharedSelectionEntries");
+  if (shared) {
+    for (const entry of childrenByLocalName(shared, "selectionEntry")) {
+      const rawName = getAttr(entry, "name") || "";
+      if (!rawName.startsWith("Regiment of Renown:")) continue;
+      const pubId = getAttr(entry, "publicationId");
+      if (pubId !== REGIMENTS_OF_RENOWN_PUBLICATION_ID) continue;
+      const regimentName = decodeEntities(rawName.replace(/^Regiment of Renown:\s*/i, "").trim());
+      if (filterByRegiment && regimentName !== filterByRegiment) continue;
+      const childId = getChildIdFromModifier(entry);
+      if (childId && regimentName) {
+        childIdToRegiment[childId] = regimentName;
+        regimentMapping[regimentName] = regimentMapping[regimentName] ?? [];
+      }
+    }
+  }
+
+  // 2. From root entryLinks: unit entryLinks with modifierGroup condition childId
+  const entryLinksEl = q(root, "entryLinks");
+  if (entryLinksEl) {
+    for (const link of childrenByLocalName(entryLinksEl, "entryLink")) {
+      const linkType = getAttr(link, "type");
+      if (linkType !== "selectionEntry") continue;
+      const childId = getChildIdFromEntryLink(link);
+      if (!childId) continue;
+      const regimentName = childIdToRegiment[childId];
+      if (!regimentName) continue;
+      const unitName = decodeEntities(getAttr(link, "name") || "");
+      if (!unitName || unitName.startsWith("Regiment of Renown:")) continue;
+      const list = regimentMapping[regimentName] ?? [];
+      if (!list.includes(unitName)) list.push(unitName);
+      regimentMapping[regimentName] = list;
+    }
+  }
+
+  // 3. Parse battle traits from each regiment upgrade
+  const battleTraits: BattleTrait[] = [];
+  const now = new Date().toISOString();
+
+  if (shared) {
+    for (const entry of childrenByLocalName(shared, "selectionEntry")) {
+      const rawName = getAttr(entry, "name") || "";
+      if (!rawName.startsWith("Regiment of Renown:")) continue;
+      const pubId = getAttr(entry, "publicationId");
+      if (pubId !== REGIMENTS_OF_RENOWN_PUBLICATION_ID) continue;
+      const regimentName = decodeEntities(rawName.replace(/^Regiment of Renown:\s*/i, "").trim());
+      if (filterByRegiment && regimentName !== filterByRegiment) continue;
+      const profileEls = collectProfilesFromEntry(entry);
+      const abilities: Ability[] = [];
+      for (const profile of profileEls) {
+        const ability = parseAbilityFromProfile(profile);
+        if (ability) abilities.push(ability);
+      }
+      if (abilities.length > 0) {
+        battleTraits.push({
+          id: crypto.randomUUID(),
+          name: regimentName,
+          traitType: "Regiments of Renown",
+          regimentOfRenown: regimentName,
+          faction: "Regiments of Renown",
+          move: "-",
+          health: "-",
+          save: "-",
+          control: "-",
+          keywords: [],
+          abilities,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+  }
+
+  return { battleTraits, regimentMapping };
+}
+
+/**
+ * Extract Library catalogue paths from Regiments of Renown catalogue XML.
+ * Returns paths like "Cities of Sigmar - Library.cat" for fetching unit data.
+ */
+export function getLibraryPathsFromRegimentsXml(xml: string): string[] {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, "text/xml");
+  const catalogue = q(doc, "catalogue");
+  const root = catalogue ?? doc.documentElement;
+  const linksEl = q(root, "catalogueLinks");
+  if (!linksEl) return [];
+  const paths: string[] = [];
+  for (const link of childrenByLocalName(linksEl, "catalogueLink")) {
+    const name = getAttr(link, "name") || "";
+    if (name.endsWith(" - Library")) {
+      paths.push(`${name}.cat`);
+    }
+  }
+  return [...new Set(paths)];
 }
 
 export function getRawCatalogueUrl(path: string): string {

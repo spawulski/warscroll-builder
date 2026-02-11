@@ -119,7 +119,7 @@ export default function ArmyCollectionForm({
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-3 text-sm font-bold uppercase text-slate-600">
-          Unit Warscrolls
+          Unit Cards
         </h3>
         {availableWarscrolls.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -132,36 +132,59 @@ export default function ArmyCollectionForm({
               }}
               className="rounded border border-slate-300 px-2 py-1.5 text-sm"
             >
-              <option value="">Add a warscroll…</option>
-              {([...UNIT_TYPE_ORDER, null] as (UnitType | null)[]).map((unitType) => {
-                const groupLabel =
-                  unitType === null
-                    ? "Other"
-                    : unitType.charAt(0).toUpperCase() + unitType.slice(1);
-                const inGroup = availableWarscrolls.filter(
-                  (w) =>
-                    unitType === null
-                      ? !w.unitType || !UNIT_TYPE_ORDER.includes(w.unitType as UnitType)
-                      : w.unitType === unitType
-                );
-                if (inGroup.length === 0) return null;
+              <option value="">Add a card…</option>
+              {(() => {
+                const regimentUnits = availableWarscrolls.filter((w) => w.regimentOfRenown);
+                const nonRegimentUnits = availableWarscrolls.filter((w) => !w.regimentOfRenown);
+                const regimentGroups = regimentUnits.reduce<Record<string, Warscroll[]>>((acc, w) => {
+                  const r = w.regimentOfRenown!;
+                  if (!acc[r]) acc[r] = [];
+                  acc[r].push(w);
+                  return acc;
+                }, {});
                 return (
-                  <optgroup key={unitType ?? "_other"} label={groupLabel}>
-                    {inGroup.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.unitName || "Untitled"}
-                      </option>
+                  <>
+                    {Object.entries(regimentGroups).sort(([a], [b]) => a.localeCompare(b)).map(([regimentName, units]) => (
+                      <optgroup key={`ror-${regimentName}`} label={`Regiment: ${regimentName}`}>
+                        {units.map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.unitName || "Untitled"}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
-                  </optgroup>
+                    {([...UNIT_TYPE_ORDER, null] as (UnitType | null)[]).map((unitType) => {
+                      const groupLabel =
+                        unitType === null
+                          ? "Other"
+                          : unitType.charAt(0).toUpperCase() + unitType.slice(1);
+                      const inGroup = nonRegimentUnits.filter(
+                        (w) =>
+                          unitType === null
+                            ? !w.unitType || !UNIT_TYPE_ORDER.includes(w.unitType as UnitType)
+                            : w.unitType === unitType
+                      );
+                      if (inGroup.length === 0) return null;
+                      return (
+                        <optgroup key={unitType ?? "_other"} label={groupLabel}>
+                          {inGroup.map((w) => (
+                            <option key={w.id} value={w.id}>
+                              {w.unitName || "Untitled"}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </>
                 );
-              })}
+              })()}
             </select>
             <Plus className="h-4 w-4 text-slate-400" />
           </div>
         )}
         {selectedWarscrolls.length === 0 ? (
           <p className="text-sm text-slate-500">
-            No warscrolls in this collection. Add from the dropdown above.
+            No cards in this collection. Add from the dropdown above.
           </p>
         ) : (
           <ul className="space-y-1">
@@ -189,7 +212,7 @@ export default function ArmyCollectionForm({
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-3 text-sm font-bold uppercase text-slate-600">
-          Battle Traits
+          Trait Cards
         </h3>
         {availableTraits.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2">

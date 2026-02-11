@@ -67,10 +67,14 @@ export default function BattleTraitCard({ trait, compact = false, landscape = fa
   const showStats = stats.length > 0;
 
   const factionLine = [trait.faction, trait.subfaction].filter(Boolean).join(" • ") || null;
+  const isScourgeOfGhyran = trait.subfaction === "Scourge of Ghyran";
+  const isRegimentOfRenown = Boolean(trait.regimentOfRenown);
+
+  const headerBg = isRegimentOfRenown ? "bg-amber-700" : isScourgeOfGhyran ? "bg-green-800" : "bg-slate-800";
 
   return (
     <div role="article" className={className}>
-      <header className="flex flex-wrap items-baseline gap-x-2 gap-y-0 bg-slate-800 px-3 py-1.5 text-white flex-shrink-0">
+      <header className={`flex flex-wrap items-baseline gap-x-2 gap-y-0 ${headerBg} px-3 py-1.5 text-white flex-shrink-0`}>
         <h2 className="text-base font-bold leading-tight">
           {trait.name || "Untitled Battle Trait"}
         </h2>

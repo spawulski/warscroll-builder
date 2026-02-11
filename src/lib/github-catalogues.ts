@@ -91,6 +91,9 @@ export function getBattleTraitCataloguePath(libraryPath: string): string {
 /** Path to the Lores catalogue (spells, prayers, manifestation lores). */
 export const LORES_CATALOGUE_PATH = "Lores.cat";
 
+/** Path to Regiments of Renown catalogue. */
+export const REGIMENTS_OF_RENOWN_PATH = "Regiments of Renown.cat";
+
 /**
  * Fetch raw XML content of a catalogue file.
  * @param path - File name (e.g. "Blades of Khorne - Library.cat") or full raw URL

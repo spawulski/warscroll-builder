@@ -19,6 +19,8 @@ import {
   getAllArmyCollections,
   saveArmyCollection,
   deleteArmyCollection,
+  mergeRegimentMapping,
+  getRegimentMapping,
 } from "@/lib/storage";
 import WarscrollCard from "@/components/WarscrollCard";
 import WarscrollForm from "@/components/WarscrollForm";
@@ -32,9 +34,10 @@ import {
   fetchCatalogueXml,
   getBattleTraitCataloguePath,
   LORES_CATALOGUE_PATH,
+  REGIMENTS_OF_RENOWN_PATH,
   type CatalogueItem,
 } from "@/lib/github-catalogues";
-import { parseCatXml, parseBattleTraitCatXml } from "@/lib/battlescribe";
+import { parseCatXml, parseBattleTraitCatXml, parseRegimentsOfRenownCatXml, listRegimentNamesFromXml, getLibraryPathsFromRegimentsXml } from "@/lib/battlescribe";
 
 type View = "list" | "editor" | "print";
 type Section = "warscrolls" | "traits" | "collections";
@@ -60,7 +63,10 @@ export default function Home() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccessCount, setImportSuccessCount] = useState<number | null>(null);
   const [importTraitCount, setImportTraitCount] = useState<number | null>(null);
-  const [importUrl, setImportUrl] = useState("");
+  const [importRegimentCount, setImportRegimentCount] = useState<number | null>(null);
+  const [regimentOptions, setRegimentOptions] = useState<string[]>([]);
+  const [selectedRegiment, setSelectedRegiment] = useState<string>("");
+  const [regimentListLoading, setRegimentListLoading] = useState(false);
   const [selectedWarscrollFactions, setSelectedWarscrollFactions] = useState<Set<string>>(new Set());
   const [selectedWarscrollUnitTypes, setSelectedWarscrollUnitTypes] = useState<Set<UnitType>>(new Set());
   const [selectedTraitFactions, setSelectedTraitFactions] = useState<Set<string>>(new Set());
@@ -99,18 +105,48 @@ export default function Home() {
     if (section === "warscrolls" && catalogues.length === 0) loadCatalogues();
   }, [section, catalogues.length, loadCatalogues]);
 
+  const loadRegimentOptions = useCallback(async (force = false) => {
+    if (!force && regimentOptions.length > 0) return;
+    setRegimentListLoading(true);
+    try {
+      const xml = await fetchCatalogueXml(REGIMENTS_OF_RENOWN_PATH);
+      const names = listRegimentNamesFromXml(xml);
+      setRegimentOptions(names);
+      setSelectedRegiment((prev) => (names.includes(prev) ? prev : names[0] ?? ""));
+    } catch {
+      setRegimentOptions([]);
+    } finally {
+      setRegimentListLoading(false);
+    }
+  }, [regimentOptions.length]);
+
+  useEffect(() => {
+    if (section === "warscrolls" && regimentOptions.length === 0 && !regimentListLoading) {
+      loadRegimentOptions();
+    }
+  }, [section, regimentOptions.length, regimentListLoading, loadRegimentOptions]);
+
   const handleImport = useCallback(async () => {
-    const pathOrUrl = importUrl.trim() || selectedCataloguePath;
+    const pathOrUrl = selectedCataloguePath;
     if (!pathOrUrl) return;
     setImportLoading(true);
     setImportError(null);
     setImportSuccessCount(null);
     setImportTraitCount(null);
+    setImportRegimentCount(null);
     try {
       const xml = await fetchCatalogueXml(pathOrUrl);
       const { warscrolls: parsed, faction } = parseCatXml(xml);
+      const regimentMapping = getRegimentMapping();
       for (const w of parsed) {
-        saveWarscroll({ ...w, faction: faction || w.faction });
+        let regimentOfRenown: string | undefined;
+        for (const [regiment, unitNames] of Object.entries(regimentMapping)) {
+          if (unitNames.includes(w.unitName)) {
+            regimentOfRenown = regiment;
+            break;
+          }
+        }
+        saveWarscroll({ ...w, faction: faction || w.faction, regimentOfRenown });
       }
       let traitCount = 0;
       const isLibraryPath =
@@ -135,13 +171,69 @@ export default function Home() {
       loadTraits();
       setImportSuccessCount(parsed.length);
       setImportTraitCount(traitCount);
-      setImportUrl("");
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Import failed");
     } finally {
       setImportLoading(false);
     }
-  }, [selectedCataloguePath, importUrl, loadStored, loadTraits]);
+  }, [selectedCataloguePath, loadStored, loadTraits]);
+
+  const handleImportRegiments = useCallback(async () => {
+    if (!selectedRegiment.trim()) return;
+    setImportLoading(true);
+    setImportError(null);
+    setImportSuccessCount(null);
+    setImportTraitCount(null);
+    setImportRegimentCount(null);
+    try {
+      const xml = await fetchCatalogueXml(REGIMENTS_OF_RENOWN_PATH);
+      const { battleTraits: traits, regimentMapping } = parseRegimentsOfRenownCatXml(xml, selectedRegiment);
+      mergeRegimentMapping(regimentMapping);
+      // Remove existing traits for this regiment so re-import updates rather than duplicates
+      for (const t of getAllBattleTraits()) {
+        if (t.regimentOfRenown === selectedRegiment) deleteBattleTrait(t.id);
+      }
+      for (const t of traits) {
+        saveBattleTrait(t);
+      }
+      const unitNames = new Set(regimentMapping[selectedRegiment] ?? []);
+      // Fetch Library catalogues and create warscrolls for regiment units that don't exist yet
+      const libraryPaths = getLibraryPathsFromRegimentsXml(xml);
+      const results = await Promise.allSettled(
+        libraryPaths.map((path) => fetchCatalogueXml(path).then((libraryXml) => ({ path, libraryXml })))
+      );
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        const { libraryXml } = result.value;
+        const { warscrolls: parsed, faction } = parseCatXml(libraryXml);
+        for (const w of parsed) {
+          if (!unitNames.has(w.unitName)) continue;
+          const existing = getAllWarscrolls().find((x) => x.unitName === w.unitName && x.faction === faction);
+          if (existing) {
+            if (existing.regimentOfRenown !== selectedRegiment) {
+              saveWarscroll({ ...existing, regimentOfRenown: selectedRegiment });
+            }
+          } else {
+            saveWarscroll({ ...w, faction: faction || w.faction, regimentOfRenown: selectedRegiment });
+          }
+        }
+      }
+      // Update any other existing warscrolls that match
+      for (const w of getAllWarscrolls()) {
+        if (unitNames.has(w.unitName) && w.regimentOfRenown !== selectedRegiment) {
+          saveWarscroll({ ...w, regimentOfRenown: selectedRegiment });
+        }
+      }
+      loadStored();
+      loadTraits();
+      setImportTraitCount(traits.length);
+      setImportRegimentCount(traits.length);
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setImportLoading(false);
+    }
+  }, [selectedRegiment, loadStored, loadTraits]);
 
   const handleSave = useCallback(
     (w: Warscroll) => {
@@ -164,7 +256,7 @@ export default function Home() {
 
   const handleDelete = useCallback(
     (id: string) => {
-      if (confirm("Delete this warscroll?")) {
+      if (confirm("Delete this card?")) {
         deleteWarscroll(id);
         loadStored();
         if (current?.id === id) {
@@ -254,19 +346,32 @@ export default function Home() {
     setShowPrint(true);
   }, [warscrolls, battleTraits]);
 
-  const uniqueWarscrollFactions = [...new Set(warscrolls.map((w) => w.faction).filter((f): f is string => Boolean(f)))].sort();
+  const uniqueWarscrollFactions = [
+    ...new Set(warscrolls.map((w) => w.faction).filter((f): f is string => Boolean(f))),
+    ...(warscrolls.some((w) => w.regimentOfRenown) ? ["Regiments of Renown" as const] : []),
+  ].sort();
   const uniqueWarscrollUnitTypes = [...new Set(warscrolls.map((w) => w.unitType).filter((t): t is UnitType => t != null && UNIT_TYPE_ORDER.includes(t)))].sort(
     (a, b) => UNIT_TYPE_ORDER.indexOf(a) - UNIT_TYPE_ORDER.indexOf(b)
   );
-  const uniqueTraitFactions = [...new Set(battleTraits.map((t) => t.faction).filter((f): f is string => Boolean(f)))].sort();
+  const uniqueTraitFactions = [
+    ...new Set(battleTraits.map((t) => t.faction).filter((f): f is string => Boolean(f))),
+    ...(battleTraits.some((t) => t.regimentOfRenown) ? ["Regiments of Renown" as const] : []),
+  ].sort();
 
   const filteredWarscrolls = warscrolls.filter(
     (w) =>
-      (selectedWarscrollFactions.size === 0 || selectedWarscrollFactions.has(w.faction)) &&
+      (selectedWarscrollFactions.size === 0 ||
+        selectedWarscrollFactions.has(w.faction) ||
+        (selectedWarscrollFactions.has("Regiments of Renown") && w.regimentOfRenown)) &&
       (selectedWarscrollUnitTypes.size === 0 || (w.unitType && selectedWarscrollUnitTypes.has(w.unitType)))
   );
+  const regimentUnits = filteredWarscrolls.filter((w) => w.regimentOfRenown);
+  const nonRegimentUnits = filteredWarscrolls.filter((w) => !w.regimentOfRenown);
   const filteredBattleTraits = battleTraits.filter(
-    (t) => selectedTraitFactions.size === 0 || (t.faction != null && selectedTraitFactions.has(t.faction))
+    (t) =>
+      selectedTraitFactions.size === 0 ||
+      (t.faction != null && selectedTraitFactions.has(t.faction)) ||
+      (selectedTraitFactions.has("Regiments of Renown") && t.regimentOfRenown)
   );
 
   const toggleWarscrollFaction = useCallback((faction: string) => {
@@ -319,7 +424,7 @@ export default function Home() {
       <header className="sticky top-0 z-40 border-b border-slate-300 bg-slate-800 text-white shadow">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <h1 className="text-xl font-bold tracking-tight">
-            Warscroll Architect
+            Cards.TabletopToolbox
           </h1>
           <nav className="flex flex-wrap items-center gap-2">
             <button
@@ -330,7 +435,7 @@ export default function Home() {
               }}
               className={`rounded px-3 py-1.5 text-sm font-medium ${section === "warscrolls" ? "bg-slate-600" : "hover:bg-slate-700"}`}
             >
-              Unit Warscrolls
+              Unit Cards
             </button>
             <button
               type="button"
@@ -340,7 +445,7 @@ export default function Home() {
               }}
               className={`rounded px-3 py-1.5 text-sm font-medium ${section === "traits" ? "bg-slate-600" : "hover:bg-slate-700"}`}
             >
-              Battle Traits
+              Trait Cards
             </button>
             <button
               type="button"
@@ -352,6 +457,24 @@ export default function Home() {
             >
               Army Collections
             </button>
+            {section === "warscrolls" && (
+              <button
+                type="button"
+                onClick={handleNew}
+                className="ml-2 flex items-center gap-1.5 rounded border border-slate-500 bg-slate-600 px-3 py-1.5 text-sm font-medium hover:bg-slate-500"
+              >
+                <Plus className="h-4 w-4" /> New Card
+              </button>
+            )}
+            {section === "traits" && (
+              <button
+                type="button"
+                onClick={handleNewTrait}
+                className="ml-2 flex items-center gap-1.5 rounded border border-slate-500 bg-slate-600 px-3 py-1.5 text-sm font-medium hover:bg-slate-500"
+              >
+                <Plus className="h-4 w-4" /> New Trait Card
+              </button>
+            )}
             <div className="ml-2 flex rounded border border-slate-500 overflow-hidden">
               <button
                 type="button"
@@ -385,16 +508,9 @@ export default function Home() {
       <main className="mx-auto max-w-6xl px-4 py-6">
         {view === "list" && section === "warscrolls" && (
           <div className="space-y-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <button
-                type="button"
-                onClick={handleNew}
-                className="flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-600"
-              >
-                <Plus className="h-4 w-4" /> New Warscroll
-              </button>
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <span className="text-sm font-medium text-slate-700">Import from BSData</span>
+            <div className="flex flex-nowrap items-center gap-3">
+              <div className="flex flex-shrink-0 flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <span className="text-sm font-medium text-slate-700 shrink-0">Import from BSData</span>
                 <button
                   type="button"
                   onClick={() => loadCatalogues()}
@@ -422,7 +538,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={handleImport}
-                  disabled={importLoading || (!importUrl.trim() && !selectedCataloguePath)}
+                  disabled={importLoading || !selectedCataloguePath}
                   className="flex items-center gap-2 rounded-lg bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-600 disabled:opacity-50"
                 >
                   {importLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -444,26 +560,46 @@ export default function Home() {
                   </span>
                 )}
               </div>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Or paste a raw .cat URL</label>
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  value={importUrl}
-                  onChange={(e) => setImportUrl(e.target.value)}
-                  placeholder="https://raw.githubusercontent.com/BSData/age-of-sigmar-4th/main/..."
-                  className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 placeholder:text-slate-400"
-                  disabled={importLoading}
-                />
+              <div className="flex flex-shrink-0 flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 p-2">
+                <span className="text-sm font-medium text-slate-700 shrink-0">Regiments of Renown</span>
                 <button
                   type="button"
-                  onClick={handleImport}
-                  disabled={importLoading || !importUrl.trim()}
-                  className="rounded-lg bg-slate-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-500 disabled:opacity-50"
+                  onClick={() => loadRegimentOptions(true)}
+                  disabled={regimentListLoading || importLoading}
+                  className="rounded border border-amber-300 bg-white px-2 py-1 text-xs text-amber-900 hover:bg-amber-50"
+                  title="Refresh regiment list"
                 >
-                  Fetch &amp; Import
+                  {regimentListLoading ? "Loading…" : "Refresh"}
                 </button>
+                <select
+                  value={selectedRegiment}
+                  onChange={(e) => setSelectedRegiment(e.target.value)}
+                  className="rounded border border-amber-300 bg-white px-2 py-1.5 text-sm text-slate-800"
+                  disabled={importLoading}
+                >
+                  {regimentOptions.length === 0 && (
+                    <option value="">{regimentListLoading ? "Loading…" : "No regiments"}</option>
+                  )}
+                  {regimentOptions.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleImportRegiments}
+                  disabled={importLoading || !selectedRegiment}
+                  className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-200 disabled:opacity-50"
+                >
+                  {importLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  {importLoading ? "Importing…" : "Import"}
+                </button>
+                {importRegimentCount != null && importRegimentCount > 0 && (
+                  <span className="text-sm text-green-700">
+                    Imported {selectedRegiment}
+                  </span>
+                )}
               </div>
             </div>
             {warscrolls.length > 0 && (uniqueWarscrollFactions.length > 0 || uniqueWarscrollUnitTypes.length > 0) && (
@@ -522,8 +658,73 @@ export default function Home() {
               </div>
             ) : (
               <div className="space-y-8">
+                {(() => {
+                  const regimentUnits = filteredWarscrolls.filter((w) => w.regimentOfRenown);
+                  const nonRegimentUnits = filteredWarscrolls.filter((w) => !w.regimentOfRenown);
+                  const regimentGroups = regimentUnits.reduce<Record<string, Warscroll[]>>((acc, w) => {
+                    const r = w.regimentOfRenown!;
+                    if (!acc[r]) acc[r] = [];
+                    acc[r].push(w);
+                    return acc;
+                  }, {});
+                  const regimentNames = Object.keys(regimentGroups).sort();
+                  if (regimentNames.length === 0) return null;
+                  return (
+                    <section key="regiments-of-renown">
+                      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-amber-700">
+                        Regiments of Renown
+                      </h2>
+                      <div className="space-y-6">
+                        {regimentNames.map((regimentName) => (
+                          <div key={regimentName}>
+                            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
+                              {regimentName}
+                            </h3>
+                            <ul
+                              className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}
+                            >
+                              {regimentGroups[regimentName].map((w) => (
+                                <li
+                                  key={w.id}
+                                  className="group relative rounded-xl border border-amber-200 bg-amber-50/50 shadow-sm transition hover:shadow-md"
+                                >
+                                  <div className="p-2">
+                                    <WarscrollCard
+                                      warscroll={w}
+                                      showExpand
+                                      maxAbilityLength={80}
+                                      landscape={cardLayout === "landscape"}
+                                    />
+                                  </div>
+                                  <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEdit(w)}
+                                      className="rounded bg-slate-600 p-1.5 text-white hover:bg-slate-500"
+                                      title="Edit"
+                                    >
+                                      <Edit2 className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDelete(w.id)}
+                                      className="rounded bg-red-600 p-1.5 text-white hover:bg-red-500"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })()}
                 {UNIT_TYPE_ORDER.map((unitType) => {
-                  const inType = filteredWarscrolls.filter((w) => w.unitType === unitType);
+                  const inType = nonRegimentUnits.filter((w) => w.unitType === unitType);
                   if (inType.length === 0) return null;
                   return (
                     <section key={unitType}>
@@ -571,7 +772,7 @@ export default function Home() {
                   );
                 })}
                 {(() => {
-                  const others = filteredWarscrolls.filter(
+                  const others = nonRegimentUnits.filter(
                     (w) => !w.unitType || !UNIT_TYPE_ORDER.includes(w.unitType as UnitType)
                   );
                   if (others.length === 0) return null;
@@ -640,7 +841,7 @@ export default function Home() {
               <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-12 text-center text-slate-600">
                 <p className="font-medium">No army collections yet.</p>
                 <p className="mt-1 text-sm">
-                  Save a set of warscrolls and battle traits together for quick access and printing.
+                  Save a set of cards and battle traits together for quick access and printing.
                 </p>
               </div>
             ) : (
@@ -697,15 +898,6 @@ export default function Home() {
 
         {view === "list" && section === "traits" && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleNewTrait}
-                className="flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-600"
-              >
-                <Plus className="h-4 w-4" /> New Battle Trait
-              </button>
-            </div>
             {battleTraits.length > 0 && uniqueTraitFactions.length > 0 && (
               <div className="flex flex-wrap gap-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -741,16 +933,76 @@ export default function Home() {
               </div>
             ) : (
               <div className="space-y-8">
-                {TRAIT_TYPE_ORDER.map((traitType) => {
-                  const traits = filteredBattleTraits.filter(
-                    (t) => (t.traitType ?? "Battle traits") === traitType
+                {(() => {
+                  const regimentTraits = filteredBattleTraits.filter((t) => t.regimentOfRenown);
+                  const nonRegimentTraits = filteredBattleTraits.filter((t) => !t.regimentOfRenown);
+                  const regimentGroups = regimentTraits.reduce<Record<string, BattleTrait[]>>((acc, t) => {
+                    const r = t.regimentOfRenown!;
+                    if (!acc[r]) acc[r] = [];
+                    acc[r].push(t);
+                    return acc;
+                  }, {});
+                  const regimentNames = Object.keys(regimentGroups).sort();
+                  if (regimentNames.length === 0) return null;
+                  return (
+                    <section key="regiments-of-renown">
+                      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-amber-700">
+                        Regiments of Renown
+                      </h2>
+                      <div className="space-y-6">
+                        {regimentNames.map((regimentName) => (
+                          <div key={regimentName}>
+                            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
+                              {regimentName}
+                            </h3>
+                            <ul
+                              className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}
+                            >
+                              {regimentGroups[regimentName].map((t) => (
+                                <li
+                                  key={t.id}
+                                  className="group relative rounded-xl border border-amber-200 bg-amber-50/50 shadow-sm transition hover:shadow-md"
+                                >
+                                  <div className="p-2">
+                                    <BattleTraitCard trait={t} landscape={cardLayout === "landscape"} />
+                                  </div>
+                                  <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditTrait(t)}
+                                      className="rounded bg-slate-600 p-1.5 text-white hover:bg-slate-500"
+                                      title="Edit"
+                                    >
+                                      <Edit2 className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteTrait(t.id)}
+                                      className="rounded bg-red-600 p-1.5 text-white hover:bg-red-500"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
                   );
+                })()}
+                {TRAIT_TYPE_ORDER.map((traitType) => {
+                  const traits = filteredBattleTraits
+                    .filter((t) => !t.regimentOfRenown)
+                    .filter((t) => (t.traitType ?? "Battle traits") === traitType);
                   if (traits.length === 0) return null;
                   return (
                     <section key={traitType}>
-                      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-600">
+                      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-600">
                         {traitType}
-                      </h3>
+                      </h2>
                       <ul className={`grid gap-4 ${cardLayout === "landscape" ? "sm:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
                         {traits.map((t) => (
                           <li
@@ -813,7 +1065,7 @@ export default function Home() {
                   onClick={() => handleSave(current)}
                   className="rounded bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600"
                 >
-                  Save Warscroll
+                  Save Card
                 </button>
                 <button
                   type="button"
