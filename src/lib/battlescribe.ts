@@ -655,12 +655,10 @@ export function parseBattleTraitCatXml(xml: string, loresXml?: string): ParseBat
   return { battleTraits, faction };
 }
 
-/** Publication ID for Regiments of Renown content. */
-const REGIMENTS_OF_RENOWN_PUBLICATION_ID = "27d9-b0c5-1ecc-ba2f";
-
 /**
  * Parse Regiments of Renown catalogue XML to extract only the list of regiment names.
  * Lightweight - used to populate the dropdown without full parsing.
+ * Includes all regiments regardless of publication ID.
  */
 export function listRegimentNamesFromXml(xml: string): string[] {
   const parser = new DOMParser();
@@ -673,8 +671,6 @@ export function listRegimentNamesFromXml(xml: string): string[] {
   for (const entry of childrenByLocalName(shared, "selectionEntry")) {
     const rawName = getAttr(entry, "name") || "";
     if (!rawName.startsWith("Regiment of Renown:")) continue;
-    const pubId = getAttr(entry, "publicationId");
-    if (pubId !== REGIMENTS_OF_RENOWN_PUBLICATION_ID) continue;
     const regimentName = decodeEntities(rawName.replace(/^Regiment of Renown:\s*/i, "").trim());
     if (regimentName && !names.includes(regimentName)) names.push(regimentName);
   }
@@ -744,8 +740,6 @@ export function parseRegimentsOfRenownCatXml(xml: string, onlyRegiment?: string)
     for (const entry of childrenByLocalName(shared, "selectionEntry")) {
       const rawName = getAttr(entry, "name") || "";
       if (!rawName.startsWith("Regiment of Renown:")) continue;
-      const pubId = getAttr(entry, "publicationId");
-      if (pubId !== REGIMENTS_OF_RENOWN_PUBLICATION_ID) continue;
       const regimentName = decodeEntities(rawName.replace(/^Regiment of Renown:\s*/i, "").trim());
       if (filterByRegiment && regimentName !== filterByRegiment) continue;
       const childId = getChildIdFromModifier(entry);
@@ -782,8 +776,6 @@ export function parseRegimentsOfRenownCatXml(xml: string, onlyRegiment?: string)
     for (const entry of childrenByLocalName(shared, "selectionEntry")) {
       const rawName = getAttr(entry, "name") || "";
       if (!rawName.startsWith("Regiment of Renown:")) continue;
-      const pubId = getAttr(entry, "publicationId");
-      if (pubId !== REGIMENTS_OF_RENOWN_PUBLICATION_ID) continue;
       const regimentName = decodeEntities(rawName.replace(/^Regiment of Renown:\s*/i, "").trim());
       if (filterByRegiment && regimentName !== filterByRegiment) continue;
       const profileEls = collectProfilesFromEntry(entry);
@@ -796,9 +788,9 @@ export function parseRegimentsOfRenownCatXml(xml: string, onlyRegiment?: string)
         battleTraits.push({
           id: crypto.randomUUID(),
           name: regimentName,
-          traitType: "Regiments of Renown",
+          traitType: "RoR",
           regimentOfRenown: regimentName,
-          faction: "Regiments of Renown",
+          faction: "RoR",
           move: "-",
           health: "-",
           save: "-",

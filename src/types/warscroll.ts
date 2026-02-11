@@ -220,12 +220,12 @@ export type BattleTraitType =
   | "Spell lores"
   | "Manifestation Lores"
   | "Battle formations"
-  | "Regiments of Renown"
+  | "RoR"
   | "Battle traits";
 
 export const TRAIT_TYPE_ORDER: BattleTraitType[] = [
   "Battle traits",
-  "Regiments of Renown",
+  "RoR",
   "Battle formations",
   "Heroic traits",
   "Artefacts",

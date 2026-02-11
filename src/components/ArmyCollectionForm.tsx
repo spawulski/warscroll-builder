@@ -145,7 +145,7 @@ export default function ArmyCollectionForm({
                 return (
                   <>
                     {Object.entries(regimentGroups).sort(([a], [b]) => a.localeCompare(b)).map(([regimentName, units]) => (
-                      <optgroup key={`ror-${regimentName}`} label={`Regiment: ${regimentName}`}>
+                      <optgroup key={`ror-${regimentName}`} label={`RoR: ${regimentName}`}>
                         {units.map((w) => (
                           <option key={w.id} value={w.id}>
                             {w.unitName || "Untitled"}

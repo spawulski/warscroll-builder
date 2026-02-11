@@ -348,21 +348,26 @@ export default function Home() {
 
   const uniqueWarscrollFactions = [
     ...new Set(warscrolls.map((w) => w.faction).filter((f): f is string => Boolean(f))),
-    ...(warscrolls.some((w) => w.regimentOfRenown) ? ["Regiments of Renown" as const] : []),
+    ...(warscrolls.some((w) => w.regimentOfRenown) ? ["RoR" as const] : []),
   ].sort();
   const uniqueWarscrollUnitTypes = [...new Set(warscrolls.map((w) => w.unitType).filter((t): t is UnitType => t != null && UNIT_TYPE_ORDER.includes(t)))].sort(
     (a, b) => UNIT_TYPE_ORDER.indexOf(a) - UNIT_TYPE_ORDER.indexOf(b)
   );
   const uniqueTraitFactions = [
-    ...new Set(battleTraits.map((t) => t.faction).filter((f): f is string => Boolean(f))),
-    ...(battleTraits.some((t) => t.regimentOfRenown) ? ["Regiments of Renown" as const] : []),
+    ...new Set(
+      battleTraits
+        .map((t) => t.faction)
+        .filter((f): f is string => Boolean(f))
+        .map((f) => (f === "Regiments of Renown" ? "RoR" : f))
+    ),
+    ...(battleTraits.some((t) => t.regimentOfRenown) ? ["RoR" as const] : []),
   ].sort();
 
   const filteredWarscrolls = warscrolls.filter(
     (w) =>
       (selectedWarscrollFactions.size === 0 ||
         selectedWarscrollFactions.has(w.faction) ||
-        (selectedWarscrollFactions.has("Regiments of Renown") && w.regimentOfRenown)) &&
+        (selectedWarscrollFactions.has("RoR") && w.regimentOfRenown)) &&
       (selectedWarscrollUnitTypes.size === 0 || (w.unitType && selectedWarscrollUnitTypes.has(w.unitType)))
   );
   const regimentUnits = filteredWarscrolls.filter((w) => w.regimentOfRenown);
@@ -371,7 +376,7 @@ export default function Home() {
     (t) =>
       selectedTraitFactions.size === 0 ||
       (t.faction != null && selectedTraitFactions.has(t.faction)) ||
-      (selectedTraitFactions.has("Regiments of Renown") && t.regimentOfRenown)
+      ((t.faction === "Regiments of Renown" || t.regimentOfRenown) && selectedTraitFactions.has("RoR"))
   );
 
   const toggleWarscrollFaction = useCallback((faction: string) => {
@@ -561,7 +566,7 @@ export default function Home() {
                 )}
               </div>
               <div className="flex flex-shrink-0 flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 p-2">
-                <span className="text-sm font-medium text-slate-700 shrink-0">Regiments of Renown</span>
+                <span className="text-sm font-medium text-slate-700 shrink-0">RoR</span>
                 <button
                   type="button"
                   onClick={() => loadRegimentOptions(true)}
@@ -672,7 +677,7 @@ export default function Home() {
                   return (
                     <section key="regiments-of-renown">
                       <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-amber-700">
-                        Regiments of Renown
+                        RoR
                       </h2>
                       <div className="space-y-6">
                         {regimentNames.map((regimentName) => (
@@ -947,7 +952,7 @@ export default function Home() {
                   return (
                     <section key="regiments-of-renown">
                       <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-amber-700">
-                        Regiments of Renown
+                        RoR
                       </h2>
                       <div className="space-y-6">
                         {regimentNames.map((regimentName) => (
@@ -996,7 +1001,11 @@ export default function Home() {
                 {TRAIT_TYPE_ORDER.map((traitType) => {
                   const traits = filteredBattleTraits
                     .filter((t) => !t.regimentOfRenown)
-                    .filter((t) => (t.traitType ?? "Battle traits") === traitType);
+                    .filter(
+                    (t) =>
+                      (t.traitType ?? "Battle traits") === traitType ||
+                      (traitType === "RoR" && String(t.traitType) === "Regiments of Renown")
+                  );
                   if (traits.length === 0) return null;
                   return (
                     <section key={traitType}>

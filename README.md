@@ -16,7 +16,7 @@ A web app for creating, managing, and printing **Warhammer Age of Sigmar (4th Ed
 - **Import from BSData** – Import units and battle traits from the age-of-sigmar-4th catalogue.
 - **Live preview** – Editor and card preview side by side.
 - **Print sheet** – 4 cards per A4/Letter page (2×2 grid), compact layout for print.
-- **Regiments of Renown** – Import individual regiments with their units and battle traits.
+- **RoR** – Import individual regiments with their units and battle traits.
 - **Army collections** – Save sets of cards and battle traits for quick access.
 
 ## Getting started
@@ -29,7 +29,7 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000).
 
 - **New Card** – Start from scratch.
-- **Import** – Import from BSData faction catalogues or Regiments of Renown.
+- **Import** – Import from BSData faction catalogues or RoR.
 - **Print** – Opens a print view with 4 cards per page; use the Print button or browser print (Ctrl/Cmd+P).
 
 ## Project layout
