@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Printer, Trash2, Edit2, Download, Loader2, FileText } from "lucide-react";
+import { Plus, Printer, Trash2, Edit2, Download, Loader2, FileText, ClipboardPaste, X } from "lucide-react";
 import type { Warscroll, BattleTrait, ArmyCollection, BattleTraitType, UnitType } from "@/types/warscroll";
 import { UNIT_TYPE_ORDER, TRAIT_TYPE_ORDER } from "@/types/warscroll";
 import {
@@ -38,6 +38,7 @@ import {
   type CatalogueItem,
 } from "@/lib/github-catalogues";
 import { parseCatXml, parseBattleTraitCatXml, parseRegimentsOfRenownCatXml, listRegimentNamesFromXml, getLibraryPathsFromRegimentsXml } from "@/lib/battlescribe";
+import { parseArmyListText, matchWarscroll, matchBattleTrait } from "@/lib/parse-army-list";
 
 type View = "list" | "editor" | "print";
 type Section = "warscrolls" | "traits" | "collections";
@@ -70,6 +71,13 @@ export default function Home() {
   const [selectedWarscrollFactions, setSelectedWarscrollFactions] = useState<Set<string>>(new Set());
   const [selectedWarscrollUnitTypes, setSelectedWarscrollUnitTypes] = useState<Set<UnitType>>(new Set());
   const [selectedTraitFactions, setSelectedTraitFactions] = useState<Set<string>>(new Set());
+  const [pasteArmyListText, setPasteArmyListText] = useState("");
+  const [showPasteForm, setShowPasteForm] = useState(false);
+  const [pasteError, setPasteError] = useState<string | null>(null);
+  const [pasteUnmatched, setPasteUnmatched] = useState<{
+    units: string[];
+    traits: string[];
+  } | null>(null);
 
   const loadStored = useCallback(() => {
     setWarscrolls(getAllWarscrolls());
@@ -339,6 +347,56 @@ export default function Home() {
     },
     [currentCollection, loadCollections]
   );
+
+  const handleCreateFromPaste = useCallback(() => {
+    setPasteError(null);
+    setPasteUnmatched(null);
+    const parsed = parseArmyListText(pasteArmyListText);
+    if (!parsed.name && !parsed.faction) {
+      setPasteError("Could not parse army list. Paste a list from the AoS app.");
+      return;
+    }
+    const warscrollIds: string[] = [];
+    const unmatchedUnits: string[] = [];
+    for (const { unitName, regimentOfRenown } of parsed.unitRegiments) {
+      const id = matchWarscroll(unitName, parsed.faction, regimentOfRenown, warscrolls);
+      if (id && !warscrollIds.includes(id)) warscrollIds.push(id);
+      else if (!unmatchedUnits.includes(unitName)) unmatchedUnits.push(unitName);
+    }
+    const battleTraitIds: string[] = [];
+    const traitNames = [
+      parsed.battleFormation,
+      ...parsed.spellLores,
+      ...parsed.manifestationLores,
+      ...parsed.enhancementNames,
+    ].filter((n): n is string => Boolean(n));
+    const unmatchedTraits: string[] = [];
+    for (const name of traitNames) {
+      const id = matchBattleTrait(name, parsed.faction, battleTraits);
+      if (id && !battleTraitIds.includes(id)) battleTraitIds.push(id);
+      else if (!unmatchedTraits.includes(name)) unmatchedTraits.push(name);
+    }
+    if (unmatchedUnits.length > 0 || unmatchedTraits.length > 0) {
+      setPasteUnmatched({ units: unmatchedUnits, traits: unmatchedTraits });
+    }
+    const now = new Date().toISOString();
+    const collection: ArmyCollection = {
+      id: crypto.randomUUID(),
+      name: parsed.name,
+      faction: parsed.faction,
+      warscrollIds,
+      battleTraitIds,
+      createdAt: now,
+      updatedAt: now,
+    };
+    saveArmyCollection(collection);
+    loadCollections();
+    setCurrentCollection(collection);
+    setView("editor");
+    setSection("collections");
+    setPasteArmyListText("");
+    setShowPasteForm(false);
+  }, [pasteArmyListText, warscrolls, battleTraits, loadCollections]);
 
   const openPrintAll = useCallback(() => {
     setPrintWarscrolls(warscrolls);
@@ -833,7 +891,16 @@ export default function Home() {
 
         {view === "list" && section === "collections" && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-start gap-3">
+              <button
+                type="button"
+                onClick={() => setShowPasteForm((prev) => !prev)}
+                className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium ${
+                  showPasteForm ? "bg-slate-600 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <ClipboardPaste className="h-4 w-4" /> Paste army list
+              </button>
               <button
                 type="button"
                 onClick={handleNewCollection}
@@ -842,6 +909,31 @@ export default function Home() {
                 <Plus className="h-4 w-4" /> New Army Collection
               </button>
             </div>
+            {showPasteForm && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="mb-2 text-sm text-slate-600">
+                  Paste an army list from the Warhammer Age of Sigmar app. It will create a collection with matched unit cards and trait cards.
+                </p>
+                <textarea
+                  value={pasteArmyListText}
+                  onChange={(e) => setPasteArmyListText(e.target.value)}
+                  placeholder="Paste your army list here..."
+                  rows={10}
+                  className="mb-2 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                {pasteError && (
+                  <p className="mb-2 text-sm text-red-600">{pasteError}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCreateFromPaste}
+                  disabled={!pasteArmyListText.trim()}
+                  className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600 disabled:opacity-50"
+                >
+                  Create collection from paste
+                </button>
+              </div>
+            )}
             {armyCollections.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 py-12 text-center text-slate-600">
                 <p className="font-medium">No army collections yet.</p>
@@ -1090,6 +1182,36 @@ export default function Home() {
 
         {view === "editor" && section === "collections" && currentCollection && (
           <div className="space-y-6">
+            {pasteUnmatched && (pasteUnmatched.units.length > 0 || pasteUnmatched.traits.length > 0) && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="flex-1">
+                  <p className="font-medium text-amber-900">
+                    Some cards from your army list weren&apos;t found in your collection.
+                  </p>
+                  <p className="mt-1 text-sm text-amber-800">
+                    Import the {currentCollection.faction || "army"} catalogue from BSData (and RoR if needed) to add them.
+                  </p>
+                  {pasteUnmatched.units.length > 0 && (
+                    <p className="mt-2 text-sm text-amber-800">
+                      <span className="font-medium">Units:</span> {pasteUnmatched.units.join(", ")}
+                    </p>
+                  )}
+                  {pasteUnmatched.traits.length > 0 && (
+                    <p className="mt-1 text-sm text-amber-800">
+                      <span className="font-medium">Traits:</span> {pasteUnmatched.traits.join(", ")}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPasteUnmatched(null)}
+                  className="rounded p-1 text-amber-700 hover:bg-amber-100"
+                  title="Dismiss"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
             <h2 className="text-lg font-bold text-slate-800">Edit Army Collection</h2>
             <ArmyCollectionForm
               collection={currentCollection}
@@ -1107,7 +1229,10 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={() => setView("list")}
+                onClick={() => {
+                  setPasteUnmatched(null);
+                  setView("list");
+                }}
                 className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
               >
                 Back to list
